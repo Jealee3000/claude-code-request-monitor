@@ -11,6 +11,8 @@ param(
 
   [int]$ProxyPort = 43111,
 
+  [switch]$RestartWatcher,
+
   [switch]$NoClaude,
 
   [Parameter(ValueFromRemainingArguments = $true)]
@@ -32,6 +34,7 @@ Options:
   -Project       Project directory where Claude Code should start.
   -ViewerPort    Local viewer port. Default: 43110.
   -ProxyPort     Local proxy port. Default: 43111.
+  -RestartWatcher Stop existing processes that listen on the viewer/proxy ports before starting.
   -NoClaude      Start only the local service and viewer.
   --             Pass remaining arguments to claude.
 "@
@@ -92,6 +95,65 @@ function Wait-ClaudeWatchFile {
   throw "Timed out waiting for $Description at $Path"
 }
 
+function Get-ClaudeWatchPortListeners {
+  param(
+    [int[]]$Ports
+  )
+
+  $Listeners = @()
+
+  foreach ($Port in $Ports) {
+    $Connections = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+
+    foreach ($Connection in $Connections) {
+      $Process = Get-CimInstance Win32_Process -Filter "ProcessId = $($Connection.OwningProcess)" -ErrorAction SilentlyContinue
+      $Listeners += [PSCustomObject]@{
+        Port = $Port
+        ProcessId = $Connection.OwningProcess
+        CommandLine = if ($Process) { $Process.CommandLine } else { "" }
+      }
+    }
+  }
+
+  return $Listeners
+}
+
+function Ensure-ClaudeWatchPortsAvailable {
+  param(
+    [int[]]$Ports,
+    [switch]$RestartWatcher
+  )
+
+  $Listeners = @(Get-ClaudeWatchPortListeners -Ports $Ports)
+  if ($Listeners.Count -eq 0) {
+    return
+  }
+
+  $Summary = ($Listeners | ForEach-Object {
+    "port $($_.Port) is used by PID $($_.ProcessId)"
+  }) -join "; "
+
+  if (-not $RestartWatcher) {
+    throw "Claude Watch port already in use: $Summary. Stop the old watcher first, or re-run with -RestartWatcher."
+  }
+
+  $ProcessIds = $Listeners | Select-Object -ExpandProperty ProcessId -Unique
+  foreach ($ProcessId in $ProcessIds) {
+    Stop-Process -Id $ProcessId -Force
+  }
+
+  $Deadline = (Get-Date).AddSeconds(10)
+  while ((Get-Date) -lt $Deadline) {
+    $Remaining = @(Get-ClaudeWatchPortListeners -Ports $Ports)
+    if ($Remaining.Count -eq 0) {
+      return
+    }
+    Start-Sleep -Milliseconds 250
+  }
+
+  throw "Timed out waiting for old Claude Watch listener(s) to release ports: $Summary"
+}
+
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $DataDir = Join-Path $RepoRoot ".claude-watch"
@@ -116,6 +178,8 @@ $ServiceArgs = @(
 if ($InspectBody) {
   $ServiceArgs += "--inspect-body"
 }
+
+Ensure-ClaudeWatchPortsAvailable -Ports @($ViewerPort, $ProxyPort) -RestartWatcher:$RestartWatcher
 
 Write-Output "Starting Claude Watch service..."
 $Service = Start-Process `

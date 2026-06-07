@@ -44,6 +44,12 @@ Default mode records safe metadata only. To capture redacted JSON request/respon
 .\scripts\claude-watch.ps1 -InspectBody
 ```
 
+If an old watcher is still using the default ports, restart it before launching Claude:
+
+```powershell
+.\scripts\claude-watch.ps1 -InspectBody -RestartWatcher
+```
+
 In inspect mode, the local proxy performs HTTPS MITM only for the Claude Code child process. The wrapper sets:
 
 - `HTTP_PROXY`
@@ -84,6 +90,12 @@ It prints the service PID. Stop it with:
 
 ```powershell
 Stop-Process -Id <pid>
+```
+
+You can also let the wrapper stop old listeners on the viewer/proxy ports:
+
+```powershell
+.\scripts\claude-watch.ps1 -RestartWatcher -NoClaude
 ```
 
 ## Development
