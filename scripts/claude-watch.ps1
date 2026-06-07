@@ -38,97 +38,6 @@ Options:
   exit 0
 }
 
-$ErrorActionPreference = "Stop"
-$RepoRoot = Split-Path -Parent $PSScriptRoot
-$DataDir = Join-Path $RepoRoot ".claude-watch"
-$LogsDir = Join-Path $DataDir "logs"
-New-Item -ItemType Directory -Force $LogsDir | Out-Null
-
-$SessionId = "session-" + (Get-Date -Format "yyyyMMddHHmmss") + "-" + ([Guid]::NewGuid().ToString("N").Substring(0, 6))
-$ViewerUrl = "http://127.0.0.1:$ViewerPort"
-$ProxyUrl = "http://127.0.0.1:$ProxyPort"
-$OutLog = Join-Path $LogsDir "$SessionId.out.log"
-$ErrLog = Join-Path $LogsDir "$SessionId.err.log"
-
-$ServiceArgs = @(
-  "run", "dev", "--",
-  "--session-id", $SessionId,
-  "--project", (Resolve-Path $Project).Path,
-  "--viewer-port", "$ViewerPort",
-  "--proxy-port", "$ProxyPort",
-  "--data-dir", $DataDir
-)
-
-if ($InspectBody) {
-  $ServiceArgs += "--inspect-body"
-}
-
-Write-Host "Starting Claude Watch service..."
-$Service = Start-Process `
-  -FilePath "npm.cmd" `
-  -ArgumentList $ServiceArgs `
-  -WorkingDirectory $RepoRoot `
-  -WindowStyle Hidden `
-  -RedirectStandardOutput $OutLog `
-  -RedirectStandardError $ErrLog `
-  -PassThru
-
-Wait-ClaudeWatchHealth -ViewerUrl $ViewerUrl -Process $Service -OutLog $OutLog -ErrLog $ErrLog
-
-$CaPath = Join-Path $DataDir "mitm\certs\ca.pem"
-if ($InspectBody) {
-  Wait-ClaudeWatchFile -Path $CaPath -Process $Service -Description "local CA certificate"
-}
-
-Write-Host "Claude Watch viewer: $ViewerUrl"
-Write-Host "Claude Watch proxy:  $ProxyUrl"
-Write-Host "Claude Watch session: $SessionId"
-Write-Host "Claude Watch service PID: $($Service.Id)"
-
-if ($NoClaude) {
-  Write-Host "Started without Claude Code. Stop it with: Stop-Process -Id $($Service.Id)"
-  exit 0
-}
-
-$ClaudeCommand = Get-Command "claude" -ErrorAction SilentlyContinue
-if (-not $ClaudeCommand) {
-  Write-Error "Could not find 'claude' on PATH. The viewer is still running at $ViewerUrl. Stop service PID $($Service.Id) when finished."
-  exit 1
-}
-
-$OldHttpProxy = $env:HTTP_PROXY
-$OldHttpsProxy = $env:HTTPS_PROXY
-$OldSessionId = $env:CLAUDE_WATCH_SESSION_ID
-$OldNodeExtraCaCerts = $env:NODE_EXTRA_CA_CERTS
-
-try {
-  $env:HTTP_PROXY = $ProxyUrl
-  $env:HTTPS_PROXY = $ProxyUrl
-  $env:CLAUDE_WATCH_SESSION_ID = $SessionId
-  if ($InspectBody) {
-    $env:NODE_EXTRA_CA_CERTS = $CaPath
-  }
-
-  Push-Location (Resolve-Path $Project).Path
-  try {
-    & $ClaudeCommand.Source @ClaudeArgs
-    $ClaudeExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
-  }
-  finally {
-    Pop-Location
-  }
-}
-finally {
-  $env:HTTP_PROXY = $OldHttpProxy
-  $env:HTTPS_PROXY = $OldHttpsProxy
-  $env:CLAUDE_WATCH_SESSION_ID = $OldSessionId
-  $env:NODE_EXTRA_CA_CERTS = $OldNodeExtraCaCerts
-}
-
-Write-Host "Claude exited. Logs remain available at $ViewerUrl"
-Write-Host "Stop the watcher with: Stop-Process -Id $($Service.Id)"
-exit $ClaudeExitCode
-
 function Wait-ClaudeWatchHealth {
   param(
     [string]$ViewerUrl,
@@ -182,3 +91,94 @@ function Wait-ClaudeWatchFile {
 
   throw "Timed out waiting for $Description at $Path"
 }
+
+$ErrorActionPreference = "Stop"
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+$DataDir = Join-Path $RepoRoot ".claude-watch"
+$LogsDir = Join-Path $DataDir "logs"
+New-Item -ItemType Directory -Force $LogsDir | Out-Null
+
+$SessionId = "session-" + (Get-Date -Format "yyyyMMddHHmmss") + "-" + ([Guid]::NewGuid().ToString("N").Substring(0, 6))
+$ViewerUrl = "http://127.0.0.1:$ViewerPort"
+$ProxyUrl = "http://127.0.0.1:$ProxyPort"
+$OutLog = Join-Path $LogsDir "$SessionId.out.log"
+$ErrLog = Join-Path $LogsDir "$SessionId.err.log"
+
+$ServiceArgs = @(
+  "run", "dev", "--",
+  "--session-id", $SessionId,
+  "--project", (Resolve-Path $Project).Path,
+  "--viewer-port", "$ViewerPort",
+  "--proxy-port", "$ProxyPort",
+  "--data-dir", $DataDir
+)
+
+if ($InspectBody) {
+  $ServiceArgs += "--inspect-body"
+}
+
+Write-Output "Starting Claude Watch service..."
+$Service = Start-Process `
+  -FilePath "npm.cmd" `
+  -ArgumentList $ServiceArgs `
+  -WorkingDirectory $RepoRoot `
+  -WindowStyle Hidden `
+  -RedirectStandardOutput $OutLog `
+  -RedirectStandardError $ErrLog `
+  -PassThru
+
+Wait-ClaudeWatchHealth -ViewerUrl $ViewerUrl -Process $Service -OutLog $OutLog -ErrLog $ErrLog
+
+$CaPath = Join-Path $DataDir "mitm\certs\ca.pem"
+if ($InspectBody) {
+  Wait-ClaudeWatchFile -Path $CaPath -Process $Service -Description "local CA certificate"
+}
+
+Write-Output "Claude Watch viewer: $ViewerUrl"
+Write-Output "Claude Watch proxy:  $ProxyUrl"
+Write-Output "Claude Watch session: $SessionId"
+Write-Output "Claude Watch service PID: $($Service.Id)"
+
+if ($NoClaude) {
+  Write-Output "Started without Claude Code. Stop it with: Stop-Process -Id $($Service.Id)"
+  exit 0
+}
+
+$ClaudeCommand = Get-Command "claude" -ErrorAction SilentlyContinue
+if (-not $ClaudeCommand) {
+  Write-Error "Could not find 'claude' on PATH. The viewer is still running at $ViewerUrl. Stop service PID $($Service.Id) when finished."
+  exit 1
+}
+
+$OldHttpProxy = $env:HTTP_PROXY
+$OldHttpsProxy = $env:HTTPS_PROXY
+$OldSessionId = $env:CLAUDE_WATCH_SESSION_ID
+$OldNodeExtraCaCerts = $env:NODE_EXTRA_CA_CERTS
+
+try {
+  $env:HTTP_PROXY = $ProxyUrl
+  $env:HTTPS_PROXY = $ProxyUrl
+  $env:CLAUDE_WATCH_SESSION_ID = $SessionId
+  if ($InspectBody) {
+    $env:NODE_EXTRA_CA_CERTS = $CaPath
+  }
+
+  Push-Location (Resolve-Path $Project).Path
+  try {
+    & $ClaudeCommand.Source @ClaudeArgs
+    $ClaudeExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+  }
+  finally {
+    Pop-Location
+  }
+}
+finally {
+  $env:HTTP_PROXY = $OldHttpProxy
+  $env:HTTPS_PROXY = $OldHttpsProxy
+  $env:CLAUDE_WATCH_SESSION_ID = $OldSessionId
+  $env:NODE_EXTRA_CA_CERTS = $OldNodeExtraCaCerts
+}
+
+Write-Output "Claude exited. Logs remain available at $ViewerUrl"
+Write-Output "Stop the watcher with: Stop-Process -Id $($Service.Id)"
+exit $ClaudeExitCode
