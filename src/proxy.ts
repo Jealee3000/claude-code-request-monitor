@@ -3,6 +3,8 @@ import https from "node:https";
 import net from "node:net";
 import type { Duplex } from "node:stream";
 import { URL } from "node:url";
+import { Proxy as MitmProxy, type IContext } from "http-mitm-proxy";
+import { prepareLocalCertificate } from "./cert.js";
 import type { MonitorConfig } from "./types.js";
 import type { RequestStore } from "./store.js";
 
@@ -15,6 +17,10 @@ export interface ProxyHandle {
 }
 
 export async function startProxyServer(config: MonitorConfig, store: RequestStore): Promise<ProxyHandle> {
+  if (config.inspectBody) {
+    return startMitmProxyServer(config, store);
+  }
+
   const server = http.createServer((request, response) => {
     void handleHttpProxyRequest(config, store, request, response);
   });
@@ -33,6 +39,122 @@ export async function startProxyServer(config: MonitorConfig, store: RequestStor
         server.close((error) => (error ? reject(error) : resolve()));
       })
   };
+}
+
+function startMitmProxyServer(config: MonitorConfig, store: RequestStore): Promise<ProxyHandle> {
+  const cert = prepareLocalCertificate(config.dataDir);
+  const proxy = new MitmProxy();
+  const captures = new WeakMap<IContext, MitmCapture>();
+
+  proxy.onError((ctx, error) => {
+    if (!ctx) {
+      console.error(error);
+      return;
+    }
+
+    const capture = captures.get(ctx) ?? createMitmCapture(ctx);
+    store.logRequest({
+      sessionId: config.sessionId,
+      startedAt: capture.startedAt,
+      completedAt: new Date().toISOString(),
+      method: capture.method,
+      host: capture.host,
+      path: capture.path,
+      durationMs: Date.now() - capture.started,
+      requestBytes: bufferLength(capture.requestChunks),
+      responseBytes: bufferLength(capture.responseChunks),
+      contentType: capture.contentType,
+      error: error?.message ?? "MITM proxy error"
+    });
+  });
+
+  proxy.onRequest((ctx, callback) => {
+    captures.set(ctx, createMitmCapture(ctx));
+    callback();
+  });
+
+  proxy.onRequestData((ctx, chunk, callback) => {
+    const capture = captures.get(ctx);
+    if (capture && bufferLength(capture.requestChunks) < MAX_CAPTURE_BYTES) {
+      capture.requestChunks.push(chunk);
+    }
+    callback(null, chunk);
+  });
+
+  proxy.onResponse((ctx, callback) => {
+    const capture = captures.get(ctx);
+    if (capture) {
+      capture.statusCode = ctx.serverToProxyResponse?.statusCode ?? null;
+      capture.responseHeaders = headersToRecord(ctx.serverToProxyResponse?.headers ?? {});
+      capture.contentType = headerValue(ctx.serverToProxyResponse?.headers["content-type"]);
+    }
+    callback();
+  });
+
+  proxy.onResponseData((ctx, chunk, callback) => {
+    const capture = captures.get(ctx);
+    if (capture && bufferLength(capture.responseChunks) < MAX_CAPTURE_BYTES) {
+      capture.responseChunks.push(chunk);
+    }
+    callback(null, chunk);
+  });
+
+  proxy.onResponseEnd((ctx, callback) => {
+    const capture = captures.get(ctx);
+    if (capture) {
+      const responseBody = Buffer.concat(capture.responseChunks);
+      const requestBody = Buffer.concat(capture.requestChunks);
+      const contentType = capture.contentType;
+      const jsonLike = isJsonLike(contentType) || looksLikeJson(requestBody) || looksLikeJson(responseBody);
+
+      store.logRequest({
+        sessionId: config.sessionId,
+        startedAt: capture.startedAt,
+        completedAt: new Date().toISOString(),
+        method: capture.method,
+        host: capture.host,
+        path: capture.path,
+        statusCode: capture.statusCode,
+        durationMs: Date.now() - capture.started,
+        requestBytes: requestBody.length,
+        responseBytes: responseBody.length,
+        contentType,
+        eventCount: countServerSentEvents(responseBody, contentType),
+        requestHeaders: jsonLike ? capture.requestHeaders : undefined,
+        requestBody: jsonLike ? parseJsonOrText(requestBody) : undefined,
+        responseHeaders: jsonLike ? capture.responseHeaders : undefined,
+        responseBody: jsonLike ? parseJsonOrText(responseBody) : undefined
+      });
+      captures.delete(ctx);
+    }
+    callback();
+  });
+
+  return new Promise((resolve, reject) => {
+    proxy.listen(
+      {
+        host: config.host,
+        port: config.proxyPort,
+        sslCaDir: cert.certDir,
+        forceSNI: true
+      },
+      (error?: Error | null) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve({
+          server: proxy.httpServer as http.Server,
+          url: `http://${config.host}:${config.proxyPort}`,
+          close: () =>
+            new Promise((closeResolve) => {
+              proxy.close();
+              closeResolve();
+            })
+        });
+      }
+    );
+  });
 }
 
 async function handleHttpProxyRequest(
@@ -252,4 +374,44 @@ function countServerSentEvents(buffer: Buffer, contentType: string | null): numb
   }
   const text = buffer.toString("utf8");
   return text.split("\n").filter((line) => line.startsWith("event:")).length;
+}
+
+interface MitmCapture {
+  started: number;
+  startedAt: string;
+  method: string;
+  host: string;
+  path: string;
+  requestHeaders: Record<string, unknown>;
+  requestChunks: Buffer[];
+  responseHeaders: Record<string, unknown>;
+  responseChunks: Buffer[];
+  statusCode: number | null;
+  contentType: string | null;
+}
+
+function createMitmCapture(ctx: IContext): MitmCapture {
+  const started = Date.now();
+  const request = ctx.clientToProxyRequest;
+  const host = headerValue(request.headers.host) ?? "unknown";
+  const path = request.url ?? "/";
+
+  return {
+    started,
+    startedAt: new Date(started).toISOString(),
+    method: request.method ?? "GET",
+    host,
+    path,
+    requestHeaders: headersToRecord(request.headers),
+    requestChunks: [],
+    responseHeaders: {},
+    responseChunks: [],
+    statusCode: null,
+    contentType: null
+  };
+}
+
+function looksLikeJson(buffer: Buffer): boolean {
+  const text = buffer.toString("utf8").trimStart();
+  return text.startsWith("{") || text.startsWith("[");
 }

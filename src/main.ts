@@ -16,7 +16,7 @@ async function main(): Promise<void> {
 
   if (config.inspectBody) {
     const cert = prepareLocalCertificate(config.dataDir);
-    console.warn(cert.warning);
+    console.warn("Inspect-body mode enabled. HTTPS traffic is intercepted by the local Claude Watch proxy.");
     console.warn(`Local CA path for child process trust: ${cert.caCertPath}`);
   }
 
