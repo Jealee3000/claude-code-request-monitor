@@ -90,5 +90,12 @@ describe("viewer", () => {
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toContain("text/html");
     expect(response.body).toContain("claude-watch-root");
+    expect(response.body).toContain("Overview");
+    expect(response.body).toContain("Agent");
+    expect(response.body).toContain("Headers");
+    expect(response.body).toContain("Payload");
+    expect(response.body).toContain("Response");
+    expect(response.body).toContain("Raw");
+    expect(response.body).toContain("json-tree");
   });
 });

@@ -4,6 +4,7 @@ import net from "node:net";
 import type { Duplex } from "node:stream";
 import { URL } from "node:url";
 import { Proxy as MitmProxy, type IContext } from "http-mitm-proxy";
+import { parseDecodedBody } from "./body.js";
 import { prepareLocalCertificate } from "./cert.js";
 import type { MonitorConfig } from "./types.js";
 import type { RequestStore } from "./store.js";
@@ -121,9 +122,9 @@ function startMitmProxyServer(config: MonitorConfig, store: RequestStore): Promi
         contentType,
         eventCount: countServerSentEvents(responseBody, contentType),
         requestHeaders: jsonLike ? capture.requestHeaders : undefined,
-        requestBody: jsonLike ? parseJsonOrText(requestBody) : undefined,
+        requestBody: jsonLike ? parseDecodedBody(requestBody, capture.requestHeaders) : undefined,
         responseHeaders: jsonLike ? capture.responseHeaders : undefined,
-        responseBody: jsonLike ? parseJsonOrText(responseBody) : undefined
+        responseBody: jsonLike ? parseDecodedBody(responseBody, capture.responseHeaders) : undefined
       });
       captures.delete(ctx);
     }
@@ -228,9 +229,9 @@ async function handleHttpProxyRequest(
             contentType,
             eventCount: countServerSentEvents(responseBody, contentType),
             requestHeaders: inspectJson ? headersToRecord(clientRequest.headers) : undefined,
-            requestBody: inspectJson ? parseJsonOrText(rawBody) : undefined,
+            requestBody: inspectJson ? parseDecodedBody(rawBody, headersToRecord(clientRequest.headers)) : undefined,
             responseHeaders: inspectJson ? headersToRecord(upstreamResponse.headers) : undefined,
-            responseBody: inspectJson ? parseJsonOrText(responseBody) : undefined
+            responseBody: inspectJson ? parseDecodedBody(responseBody, headersToRecord(upstreamResponse.headers)) : undefined
           });
         });
       }
@@ -354,18 +355,6 @@ function headersToRecord(headers: http.IncomingHttpHeaders | http.OutgoingHttpHe
 
 function isJsonLike(contentType: string | null): boolean {
   return contentType?.toLowerCase().includes("json") ?? false;
-}
-
-function parseJsonOrText(buffer: Buffer): unknown {
-  const text = buffer.toString("utf8");
-  if (!text) {
-    return null;
-  }
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
 }
 
 function countServerSentEvents(buffer: Buffer, contentType: string | null): number {
