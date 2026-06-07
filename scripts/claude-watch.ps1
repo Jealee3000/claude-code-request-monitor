@@ -13,6 +13,12 @@ param(
 
   [switch]$RestartWatcher,
 
+  [string]$Resume,
+
+  [switch]$ContinueConversation,
+
+  [switch]$ForkSession,
+
   [switch]$NoClaude,
 
   [Parameter(ValueFromRemainingArguments = $true)]
@@ -26,7 +32,8 @@ Claude Watch
 Usage:
   .\scripts\claude-watch.ps1
   .\scripts\claude-watch.ps1 -InspectBody
-  .\scripts\claude-watch.ps1 -Project D:\code\some-project -- --dangerously-skip-permissions
+  .\scripts\claude-watch.ps1 -Project D:\code\some-project -Resume 464c8718-4dd5-462d-9523-20f7b51c3d25
+  .\scripts\claude-watch.ps1 -Project D:\code\some-project -ContinueConversation
   .\scripts\claude-watch.ps1 -NoClaude
 
 Options:
@@ -35,8 +42,11 @@ Options:
   -ViewerPort    Local viewer port. Default: 43110.
   -ProxyPort     Local proxy port. Default: 43111.
   -RestartWatcher Stop existing processes that listen on the viewer/proxy ports before starting.
+  -Resume        Resume a Claude conversation by session ID, or open Claude's resume picker.
+  -ContinueConversation Continue the most recent Claude conversation in the project directory.
+  -ForkSession   When resuming, create a new Claude session ID from the old conversation.
   -NoClaude      Start only the local service and viewer.
-  --             Pass remaining arguments to claude.
+  -ClaudeArgs    Advanced: pass additional raw arguments to claude.
 "@
   exit 0
 }
@@ -179,6 +189,30 @@ if ($InspectBody) {
   $ServiceArgs += "--inspect-body"
 }
 
+$EffectiveClaudeArgs = @()
+if ($ContinueConversation) {
+  $EffectiveClaudeArgs += "--continue"
+}
+if ($Resume) {
+  $EffectiveClaudeArgs += "--resume"
+  $EffectiveClaudeArgs += $Resume
+}
+if ($ForkSession) {
+  $EffectiveClaudeArgs += "--fork-session"
+}
+if ($ClaudeArgs) {
+  foreach ($Arg in $ClaudeArgs) {
+    if ($Arg -match "^--[A-Za-z0-9-]+,.+") {
+      $Parts = $Arg -split ",", 2
+      $EffectiveClaudeArgs += $Parts[0]
+      $EffectiveClaudeArgs += $Parts[1]
+    }
+    else {
+      $EffectiveClaudeArgs += $Arg
+    }
+  }
+}
+
 Ensure-ClaudeWatchPortsAvailable -Ports @($ViewerPort, $ProxyPort) -RestartWatcher:$RestartWatcher
 
 Write-Output "Starting Claude Watch service..."
@@ -229,7 +263,7 @@ try {
 
   Push-Location (Resolve-Path $Project).Path
   try {
-    & $ClaudeCommand.Source @ClaudeArgs
+    & $ClaudeCommand.Source @EffectiveClaudeArgs
     $ClaudeExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
   }
   finally {

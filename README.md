@@ -33,7 +33,19 @@ Start only the service and viewer:
 Pass arguments to Claude Code after `--`:
 
 ```powershell
-.\scripts\claude-watch.ps1 -- --dangerously-skip-permissions
+.\scripts\claude-watch.ps1 -ClaudeArgs '--dangerously-skip-permissions'
+```
+
+Resume an existing Claude conversation while monitoring:
+
+```powershell
+.\scripts\claude-watch.ps1 -InspectBody -RestartWatcher -Project D:\code\some-project -Resume 464c8718-4dd5-462d-9523-20f7b51c3d25
+```
+
+Continue the most recent conversation in the target project:
+
+```powershell
+.\scripts\claude-watch.ps1 -InspectBody -RestartWatcher -Project D:\code\some-project -ContinueConversation
 ```
 
 ## Inspect Body Mode

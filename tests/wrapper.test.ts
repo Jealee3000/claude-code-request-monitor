@@ -14,6 +14,22 @@ afterEach(async () => {
 });
 
 describe("claude-watch wrapper", () => {
+  it("documents direct Claude resume parameters", () => {
+    const result = spawnSync(
+      "powershell",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ".\\scripts\\claude-watch.ps1", "-Help"],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        timeout: 15_000
+      }
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("-Resume");
+    expect(result.stdout).toContain("-ContinueConversation");
+  });
+
   it("fails fast when the viewer port is already occupied", async () => {
     server = createServer((request, response) => {
       if (request.url === "/healthz") {
