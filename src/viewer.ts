@@ -1,12 +1,46 @@
+import { randomBytes } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
+import { createSessionId } from "./config.js";
+import { defaultClaudeHome, listLocalClaudeSessions } from "./claude-sessions.js";
 import type { RequestStore } from "./store.js";
 
-export function buildViewerServer(store: RequestStore): FastifyInstance {
+export interface ViewerOptions {
+  claudeHome?: string;
+  repoRoot?: string;
+}
+
+interface CreateWatchSessionBody {
+  id?: string;
+  projectPath?: string;
+  inspectBody?: boolean;
+  claudeSessionId?: string | null;
+}
+
+export function buildViewerServer(store: RequestStore, options: ViewerOptions = {}): FastifyInstance {
   const app = Fastify({ logger: false });
+  const claudeHome = options.claudeHome ?? defaultClaudeHome();
+  const repoRoot = options.repoRoot ?? process.cwd();
 
   app.get("/healthz", async () => ({ ok: true }));
 
   app.get("/api/sessions", async () => store.listSessions());
+
+  app.post<{ Body: CreateWatchSessionBody }>("/api/watch-sessions", async (request, reply) => {
+    const projectPath = request.body?.projectPath;
+    if (!projectPath) {
+      return reply.code(400).send({ error: "projectPath is required" });
+    }
+
+    return store.createSession({
+      id: request.body.id ?? createSessionId(),
+      projectPath,
+      inspectBody: Boolean(request.body.inspectBody),
+      claudeSessionId: request.body.claudeSessionId ?? null,
+      watchToken: randomBytes(18).toString("base64url")
+    });
+  });
+
+  app.get("/api/claude-sessions", async () => listLocalClaudeSessions(claudeHome));
 
   app.get<{ Params: { id: string } }>("/api/sessions/:id/requests", async (request) => {
     return store.listRequests(request.params.id);
@@ -24,13 +58,14 @@ export function buildViewerServer(store: RequestStore): FastifyInstance {
   });
 
   app.get("/", async (_request, reply) => {
-    return reply.type("text/html; charset=utf-8").send(renderHtml());
+    return reply.type("text/html; charset=utf-8").send(renderHtml(repoRoot));
   });
 
   return app;
 }
 
-function renderHtml(): string {
+function renderHtml(repoRoot: string): string {
+  const initialRepoRoot = JSON.stringify(repoRoot);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -77,7 +112,7 @@ function renderHtml(): string {
       background: var(--panel);
     }
     section:last-child { border-right: 0; background: var(--bg); }
-    .section-title {
+    .section-title, .section-header {
       position: sticky;
       top: 0;
       z-index: 2;
@@ -89,6 +124,40 @@ function renderHtml(): string {
       font-weight: 700;
       text-transform: uppercase;
     }
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .left-tabs {
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      padding: 8px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+    .left-tab {
+      min-height: 32px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .left-tab.active {
+      border-color: var(--line);
+      background: #eaf6f4;
+      color: var(--text);
+    }
+    .left-tab-panel.hidden { display: none; }
     button.row {
       width: 100%;
       display: block;
@@ -101,6 +170,26 @@ function renderHtml(): string {
       cursor: pointer;
     }
     button.row:hover, button.row.active { background: #eaf6f4; }
+    div.row {
+      width: 100%;
+      border-bottom: 1px solid #edf0f5;
+      padding: 10px 12px;
+      background: transparent;
+    }
+    button.small {
+      min-height: 28px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 4px 8px;
+      background: var(--panel);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 650;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    button.small:hover { background: var(--subtle); }
+    .session-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .primary { font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
     .secondary { margin-top: 4px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
     .detail { padding: 12px; }
@@ -211,11 +300,24 @@ function renderHtml(): string {
   </header>
   <main id="claude-watch-root">
     <section>
-      <div class="section-title">Sessions</div>
-      <div id="sessions" class="empty">Loading sessions...</div>
+      <div class="left-tabs" role="tablist" aria-label="Session lists">
+        <button class="left-tab active" data-left-tab="monitor" type="button">Monitor</button>
+        <button class="left-tab" data-left-tab="claude" type="button">Claude Sessions</button>
+      </div>
+      <div id="monitor-session-panel" class="left-tab-panel">
+        <div class="section-title">Monitor Sessions</div>
+        <div id="sessions" class="empty">Loading sessions...</div>
+      </div>
+      <div id="claude-session-panel" class="left-tab-panel hidden">
+        <div class="section-title">Claude Sessions</div>
+        <div id="claude-sessions" class="empty">Loading local Claude sessions...</div>
+      </div>
     </section>
     <section>
-      <div class="section-title">Requests</div>
+      <div class="section-header">
+        <span>Requests</span>
+        <button id="refresh-requests" class="small" type="button">Refresh</button>
+      </div>
       <div id="requests" class="empty">Select a session</div>
     </section>
     <section>
@@ -236,13 +338,37 @@ function renderHtml(): string {
     </section>
   </main>
   <script>
-    const state = { sessions: [], requests: [], detail: null, selectedSession: null, selectedRequest: null, tab: 'overview' };
+    const repoRoot = ${initialRepoRoot};
+    const state = {
+      sessions: [],
+      claudeSessions: [],
+      requests: [],
+      detail: null,
+      selectedSession: null,
+      selectedRequest: null,
+      tab: 'overview',
+      leftTab: 'monitor',
+      refreshingRequests: false
+    };
     const sessionsEl = document.getElementById('sessions');
+    const claudeSessionsEl = document.getElementById('claude-sessions');
     const requestsEl = document.getElementById('requests');
     const detailEl = document.getElementById('detail');
     const searchEl = document.getElementById('search');
 
     searchEl.addEventListener('input', renderDetail);
+    document.getElementById('refresh-requests').addEventListener('click', () => refreshRequests().catch(showRequestError));
+    document.querySelectorAll('[data-left-tab]').forEach((button) => {
+      button.addEventListener('click', () => setLeftTab(button.dataset.leftTab));
+    });
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && target.classList.contains('copy-command')) {
+        copyCommand(target.dataset.command || '').catch((error) => {
+          target.textContent = error.message;
+        });
+      }
+    });
     document.querySelectorAll('.tab').forEach((button) => {
       button.addEventListener('click', () => {
         state.tab = button.dataset.tab;
@@ -257,14 +383,46 @@ function renderHtml(): string {
       if (state.sessions[0]) selectSession(state.sessions[0].id);
     }
 
+    async function loadClaudeSessions() {
+      state.claudeSessions = await fetchJson('/api/claude-sessions');
+      renderClaudeSessions();
+    }
+
+    function setLeftTab(tab) {
+      state.leftTab = tab === 'claude' ? 'claude' : 'monitor';
+      document.querySelectorAll('[data-left-tab]').forEach((button) => {
+        button.classList.toggle('active', button.dataset.leftTab === state.leftTab);
+      });
+      document.getElementById('monitor-session-panel').classList.toggle('hidden', state.leftTab !== 'monitor');
+      document.getElementById('claude-session-panel').classList.toggle('hidden', state.leftTab !== 'claude');
+    }
+
     async function selectSession(id) {
       state.selectedSession = id;
       state.selectedRequest = null;
       state.detail = null;
-      state.requests = await fetchJson('/api/sessions/' + encodeURIComponent(id) + '/requests');
+      await refreshRequests({ resetSelection: true });
       renderSessions();
-      renderRequests();
       renderDetail();
+    }
+
+    async function refreshRequests(options = {}) {
+      if (!state.selectedSession || state.refreshingRequests) return;
+      state.refreshingRequests = true;
+      try {
+        const previousRequest = state.selectedRequest;
+        state.requests = await fetchJson('/api/sessions/' + encodeURIComponent(state.selectedSession) + '/requests');
+        if (options.resetSelection) {
+          state.selectedRequest = null;
+        } else if (previousRequest && !state.requests.some((request) => request.id === previousRequest)) {
+          state.selectedRequest = null;
+          state.detail = null;
+          renderDetail();
+        }
+        renderRequests();
+      } finally {
+        state.refreshingRequests = false;
+      }
     }
 
     async function selectRequest(id) {
@@ -285,8 +443,31 @@ function renderHtml(): string {
         active: session.id === state.selectedSession,
         onclick: 'selectSession(\\'' + escapeAttr(session.id) + '\\')',
         primary: session.id,
-        secondary: session.projectPath + ' - ' + (session.inspectBody ? 'inspect body' : 'metadata')
+        secondary: session.projectPath + ' - ' + (session.inspectBody ? 'inspect body' : 'metadata') +
+          (session.claudeSessionId ? ' - Claude ' + session.claudeSessionId : '')
       })).join('');
+    }
+
+    function renderClaudeSessions() {
+      if (!state.claudeSessions.length) {
+        claudeSessionsEl.className = 'empty';
+        claudeSessionsEl.textContent = 'No local Claude sessions found';
+        return;
+      }
+      claudeSessionsEl.className = '';
+      claudeSessionsEl.innerHTML = state.claudeSessions.map((session) => {
+        const ps = powerShellCommand(session);
+        const bash = gitBashCommand(session);
+        return '<div class="row">' +
+          '<div class="primary">' + escapeHtml(session.projectPath) + '</div>' +
+          '<div class="secondary">' + escapeHtml(session.sessionId) + '</div>' +
+          '<div class="secondary">' + escapeHtml(session.latestPrompt || 'No prompt preview') + '</div>' +
+          '<div class="session-actions">' +
+          '<button class="small copy-command" type="button" data-command="' + escapeHtml(ps) + '">Copy PowerShell</button>' +
+          '<button class="small copy-command" type="button" data-command="' + escapeHtml(bash) + '">Copy Git Bash</button>' +
+          '</div>' +
+          '</div>';
+      }).join('');
     }
 
     function renderRequests() {
@@ -302,6 +483,31 @@ function renderHtml(): string {
         primary: request.method + ' ' + request.host,
         secondary: request.path + ' - ' + (request.statusCode ?? 'pending') + ' - ' + (request.durationMs ?? 0) + 'ms'
       })).join('');
+    }
+
+    function powerShellCommand(session) {
+      return 'cd "' + repoRoot + '"; npm.cmd run watch -- run --project "' +
+        session.projectPath + '" --resume ' + session.sessionId;
+    }
+
+    function gitBashCommand(session) {
+      return 'cd "' + toGitBashPath(repoRoot) + '" && npm run watch -- run --project "' +
+        toGitBashPath(session.projectPath) + '" --resume ' + session.sessionId;
+    }
+
+    function toGitBashPath(path) {
+      const normalized = String(path).replace(/\\\\/g, '/');
+      const match = /^([A-Za-z]):\\/(.*)$/.exec(normalized);
+      return match ? '/' + match[1].toLowerCase() + '/' + match[2] : normalized;
+    }
+
+    async function copyCommand(command) {
+      await navigator.clipboard.writeText(command);
+    }
+
+    function showRequestError(error) {
+      requestsEl.className = 'empty bad';
+      requestsEl.textContent = error.message;
     }
 
     function renderDetail() {
@@ -577,6 +783,13 @@ function renderHtml(): string {
       sessionsEl.className = 'empty bad';
       sessionsEl.textContent = error.message;
     });
+    loadClaudeSessions().catch((error) => {
+      claudeSessionsEl.className = 'empty bad';
+      claudeSessionsEl.textContent = error.message;
+    });
+    setInterval(() => {
+      refreshRequests().catch(showRequestError);
+    }, 2000);
   </script>
 </body>
 </html>`;

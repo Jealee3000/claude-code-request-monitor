@@ -16,6 +16,8 @@ interface SessionRow {
   started_at: string;
   project_path: string;
   inspect_body: 0 | 1;
+  watch_token: string | null;
+  claude_session_id: string | null;
 }
 
 interface RequestRow {
@@ -59,7 +61,9 @@ export class RequestStore {
         id TEXT PRIMARY KEY,
         started_at TEXT NOT NULL,
         project_path TEXT NOT NULL,
-        inspect_body INTEGER NOT NULL
+        inspect_body INTEGER NOT NULL,
+        watch_token TEXT,
+        claude_session_id TEXT
       );
 
       CREATE TABLE IF NOT EXISTS requests (
@@ -89,6 +93,9 @@ export class RequestStore {
         FOREIGN KEY (request_id) REFERENCES requests(id)
       );
     `);
+    this.addColumnIfMissing("sessions", "watch_token", "TEXT");
+    this.addColumnIfMissing("sessions", "claude_session_id", "TEXT");
+    this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_watch_token ON sessions(watch_token)");
   }
 
   createSession(input: CreateSessionInput): SessionRecord {
@@ -96,21 +103,39 @@ export class RequestStore {
 
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO sessions (id, started_at, project_path, inspect_body)
-         VALUES (@id, @startedAt, @projectPath, @inspectBody)`
+        `INSERT OR IGNORE INTO sessions (
+          id,
+          started_at,
+          project_path,
+          inspect_body,
+          watch_token,
+          claude_session_id
+        )
+         VALUES (
+          @id,
+          @startedAt,
+          @projectPath,
+          @inspectBody,
+          @watchToken,
+          @claudeSessionId
+        )`
       )
       .run({
         id: input.id,
         startedAt,
         projectPath: input.projectPath,
-        inspectBody: input.inspectBody ? 1 : 0
+        inspectBody: input.inspectBody ? 1 : 0,
+        watchToken: input.watchToken ?? null,
+        claudeSessionId: input.claudeSessionId ?? null
       });
 
     return this.getSession(input.id) ?? {
       id: input.id,
       startedAt,
       projectPath: input.projectPath,
-      inspectBody: input.inspectBody
+      inspectBody: input.inspectBody,
+      watchToken: input.watchToken ?? null,
+      claudeSessionId: input.claudeSessionId ?? null
     };
   }
 
@@ -217,6 +242,11 @@ export class RequestStore {
     return rows.map(mapRequest);
   }
 
+  getSessionByWatchToken(token: string): SessionRecord | undefined {
+    const row = this.db.prepare("SELECT * FROM sessions WHERE watch_token = ?").get(token) as SessionRow | undefined;
+    return row ? mapSession(row) : undefined;
+  }
+
   getRequestDetail(requestId: number): RequestDetail | undefined {
     const requestRow = this.db.prepare("SELECT * FROM requests WHERE id = ?").get(requestId) as RequestRow | undefined;
 
@@ -242,6 +272,13 @@ export class RequestStore {
     const row = this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(id) as SessionRow | undefined;
     return row ? mapSession(row) : undefined;
   }
+
+  private addColumnIfMissing(tableName: string, columnName: string, definition: string): void {
+    const columns = this.db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === columnName)) {
+      this.db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+    }
+  }
 }
 
 function hasPayload(input: LoggedRequestInput): boolean {
@@ -262,7 +299,9 @@ function mapSession(row: SessionRow): SessionRecord {
     id: row.id,
     startedAt: row.started_at,
     projectPath: row.project_path,
-    inspectBody: row.inspect_body === 1
+    inspectBody: row.inspect_body === 1,
+    watchToken: row.watch_token,
+    claudeSessionId: row.claude_session_id
   };
 }
 

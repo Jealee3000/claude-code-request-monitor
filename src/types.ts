@@ -14,6 +14,8 @@ export interface SessionRecord {
   startedAt: string;
   projectPath: string;
   inspectBody: boolean;
+  watchToken: string | null;
+  claudeSessionId: string | null;
 }
 
 export interface RequestRecord {
@@ -45,6 +47,8 @@ export interface CreateSessionInput {
   id: string;
   projectPath: string;
   inspectBody: boolean;
+  watchToken?: string | null;
+  claudeSessionId?: string | null;
 }
 
 export interface LoggedRequestInput {

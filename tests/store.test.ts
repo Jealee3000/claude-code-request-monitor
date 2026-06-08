@@ -23,11 +23,27 @@ describe("RequestStore", () => {
     const session = store.createSession({
       id: "session-a",
       projectPath: "D:\\code\\demo",
-      inspectBody: false
+      inspectBody: false,
+      watchToken: "token-a",
+      claudeSessionId: "claude-a"
     });
 
     expect(session.id).toBe("session-a");
+    expect(session.watchToken).toBe("token-a");
+    expect(session.claudeSessionId).toBe("claude-a");
     expect(store.listSessions()).toEqual([session]);
+  });
+
+  it("finds a session by watch token", () => {
+    const session = store.createSession({
+      id: "session-a",
+      projectPath: "D:\\code\\demo",
+      inspectBody: true,
+      watchToken: "token-a"
+    });
+
+    expect(store.getSessionByWatchToken("token-a")).toEqual(session);
+    expect(store.getSessionByWatchToken("missing")).toBeUndefined();
   });
 
   it("logs metadata without payload rows by default", () => {

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
@@ -27,7 +27,20 @@ beforeEach(async () => {
     statusCode: 200,
     requestBody: { messages: [{ role: "user", content: "hello" }] }
   });
-  app = buildViewerServer(store);
+  const claudeProjectDir = join(tempDir, ".claude", "projects", "D--code-demo");
+  mkdirSync(claudeProjectDir, { recursive: true });
+  writeFileSync(
+    join(claudeProjectDir, "464c8718-4dd5-462d-9523-20f7b51c3d25.jsonl"),
+    JSON.stringify({
+      type: "last-prompt",
+      sessionId: "464c8718-4dd5-462d-9523-20f7b51c3d25",
+      lastPrompt: "resume me"
+    })
+  );
+  app = buildViewerServer(store, {
+    claudeHome: join(tempDir, ".claude"),
+    repoRoot: "D:\\code\\claude-code-network"
+  });
   await app.ready();
 });
 
@@ -84,6 +97,39 @@ describe("viewer", () => {
     });
   });
 
+  it("creates watch sessions from the local API", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/watch-sessions",
+      payload: {
+        projectPath: "D:\\code\\demo",
+        inspectBody: true,
+        claudeSessionId: "464c8718-4dd5-462d-9523-20f7b51c3d25"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      projectPath: "D:\\code\\demo",
+      inspectBody: true,
+      claudeSessionId: "464c8718-4dd5-462d-9523-20f7b51c3d25",
+      watchToken: expect.any(String)
+    });
+  });
+
+  it("returns local Claude sessions", async () => {
+    const response = await app.inject({ method: "GET", url: "/api/claude-sessions" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject([
+      {
+        projectPath: "D:\\code\\demo",
+        sessionId: "464c8718-4dd5-462d-9523-20f7b51c3d25",
+        latestPrompt: "resume me"
+      }
+    ]);
+  });
+
   it("returns viewer html", async () => {
     const response = await app.inject({ method: "GET", url: "/" });
 
@@ -97,5 +143,14 @@ describe("viewer", () => {
     expect(response.body).toContain("Response");
     expect(response.body).toContain("Raw");
     expect(response.body).toContain("json-tree");
+    expect(response.body).toContain("Claude Sessions");
+    expect(response.body).toContain("left-tabs");
+    expect(response.body).toContain('data-left-tab="monitor"');
+    expect(response.body).toContain('data-left-tab="claude"');
+    expect(response.body).toContain("setLeftTab");
+    expect(response.body).toContain("Refresh");
+    expect(response.body).toContain("setInterval");
+    expect(response.body).toContain("refreshRequests");
+    expect(response.body).toContain("copyCommand");
   });
 });

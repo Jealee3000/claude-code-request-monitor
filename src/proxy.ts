@@ -6,6 +6,7 @@ import { URL } from "node:url";
 import { Proxy as MitmProxy, type IContext } from "http-mitm-proxy";
 import { parseDecodedBody } from "./body.js";
 import { prepareLocalCertificate } from "./cert.js";
+import { resolveMitmRequestSessionId, resolveRequestSessionId, stripProxyAuthorization } from "./proxy-session.js";
 import type { MonitorConfig } from "./types.js";
 import type { RequestStore } from "./store.js";
 
@@ -53,9 +54,9 @@ function startMitmProxyServer(config: MonitorConfig, store: RequestStore): Promi
       return;
     }
 
-    const capture = captures.get(ctx) ?? createMitmCapture(ctx);
+    const capture = captures.get(ctx) ?? createMitmCapture(ctx, config, store);
     store.logRequest({
-      sessionId: config.sessionId,
+      sessionId: capture.sessionId,
       startedAt: capture.startedAt,
       completedAt: new Date().toISOString(),
       method: capture.method,
@@ -70,7 +71,8 @@ function startMitmProxyServer(config: MonitorConfig, store: RequestStore): Promi
   });
 
   proxy.onRequest((ctx, callback) => {
-    captures.set(ctx, createMitmCapture(ctx));
+    captures.set(ctx, createMitmCapture(ctx, config, store));
+    ctx.clientToProxyRequest.headers = stripProxyAuthorization(ctx.clientToProxyRequest.headers);
     callback();
   });
 
@@ -109,7 +111,7 @@ function startMitmProxyServer(config: MonitorConfig, store: RequestStore): Promi
       const jsonLike = isJsonLike(contentType) || looksLikeJson(requestBody) || looksLikeJson(responseBody);
 
       store.logRequest({
-        sessionId: config.sessionId,
+        sessionId: capture.sessionId,
         startedAt: capture.startedAt,
         completedAt: new Date().toISOString(),
         method: capture.method,
@@ -166,6 +168,7 @@ async function handleHttpProxyRequest(
 ): Promise<void> {
   const started = Date.now();
   const startedAt = new Date(started).toISOString();
+  const sessionId = sessionIdForHeaders(config, store, clientRequest.headers);
   const chunks: Buffer[] = [];
   let requestBytes = 0;
 
@@ -186,6 +189,7 @@ async function handleHttpProxyRequest(
       return;
     }
 
+    const upstreamHeaders = stripProxyAuthorization(clientRequest.headers);
     const upstream = target.protocol === "https:" ? https : http;
     const upstreamRequest = upstream.request(
       {
@@ -194,7 +198,7 @@ async function handleHttpProxyRequest(
         port: target.port || (target.protocol === "https:" ? 443 : 80),
         method: clientRequest.method,
         path: `${target.pathname}${target.search}`,
-        headers: clientRequest.headers
+        headers: upstreamHeaders
       },
       (upstreamResponse) => {
         const responseChunks: Buffer[] = [];
@@ -216,7 +220,7 @@ async function handleHttpProxyRequest(
           const inspectJson = config.inspectBody && isJsonLike(contentType);
 
           store.logRequest({
-            sessionId: config.sessionId,
+            sessionId,
             startedAt,
             completedAt,
             method: clientRequest.method ?? "GET",
@@ -228,8 +232,8 @@ async function handleHttpProxyRequest(
             responseBytes,
             contentType,
             eventCount: countServerSentEvents(responseBody, contentType),
-            requestHeaders: inspectJson ? headersToRecord(clientRequest.headers) : undefined,
-            requestBody: inspectJson ? parseDecodedBody(rawBody, headersToRecord(clientRequest.headers)) : undefined,
+            requestHeaders: inspectJson ? headersToRecord(upstreamHeaders) : undefined,
+            requestBody: inspectJson ? parseDecodedBody(rawBody, headersToRecord(upstreamHeaders)) : undefined,
             responseHeaders: inspectJson ? headersToRecord(upstreamResponse.headers) : undefined,
             responseBody: inspectJson ? parseDecodedBody(responseBody, headersToRecord(upstreamResponse.headers)) : undefined
           });
@@ -242,7 +246,7 @@ async function handleHttpProxyRequest(
       clientResponse.writeHead(502, { "content-type": "text/plain" });
       clientResponse.end(error.message);
       store.logRequest({
-        sessionId: config.sessionId,
+        sessionId,
         startedAt,
         completedAt,
         method: clientRequest.method ?? "GET",
@@ -269,6 +273,7 @@ function handleConnectRequest(
   head: Buffer
 ): void {
   const started = Date.now();
+  const sessionId = sessionIdForHeaders(config, store, request.headers);
   const target = request.url ?? "";
   const [host, portText] = target.split(":");
   const port = Number(portText || 443);
@@ -281,7 +286,7 @@ function handleConnectRequest(
     upstreamSocket.pipe(clientSocket);
     clientSocket.pipe(upstreamSocket);
     store.logRequest({
-      sessionId: config.sessionId,
+      sessionId,
       startedAt: new Date(started).toISOString(),
       completedAt: new Date().toISOString(),
       method: "CONNECT",
@@ -296,7 +301,7 @@ function handleConnectRequest(
   upstreamSocket.on("error", (error) => {
     clientSocket.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
     store.logRequest({
-      sessionId: config.sessionId,
+      sessionId,
       startedAt: new Date(started).toISOString(),
       completedAt: new Date().toISOString(),
       method: "CONNECT",
@@ -307,6 +312,14 @@ function handleConnectRequest(
       error: error.message
     });
   });
+}
+
+function sessionIdForHeaders(
+  config: MonitorConfig,
+  store: RequestStore,
+  headers: http.IncomingHttpHeaders
+): string {
+  return resolveRequestSessionId(headers, config.sessionId, (token) => store.getSessionByWatchToken(token)?.id);
 }
 
 function resolveTargetUrl(request: http.IncomingMessage): URL | undefined {
@@ -366,6 +379,7 @@ function countServerSentEvents(buffer: Buffer, contentType: string | null): numb
 }
 
 interface MitmCapture {
+  sessionId: string;
   started: number;
   startedAt: string;
   method: string;
@@ -379,13 +393,14 @@ interface MitmCapture {
   contentType: string | null;
 }
 
-function createMitmCapture(ctx: IContext): MitmCapture {
+function createMitmCapture(ctx: IContext, config: MonitorConfig, store: RequestStore): MitmCapture {
   const started = Date.now();
   const request = ctx.clientToProxyRequest;
   const host = headerValue(request.headers.host) ?? "unknown";
   const path = request.url ?? "/";
 
   return {
+    sessionId: resolveMitmRequestSessionId(ctx, config.sessionId, (token) => store.getSessionByWatchToken(token)?.id),
     started,
     startedAt: new Date(started).toISOString(),
     method: request.method ?? "GET",
