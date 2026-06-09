@@ -100,6 +100,68 @@ describe("RequestStore", () => {
     expect(detail?.payload?.responseBodyJson).toContain("input_tokens");
   });
 
+  it("lists request details in chronological order and finds previous request detail", () => {
+    store.createSession({
+      id: "session-a",
+      projectPath: "D:\\code\\demo",
+      inspectBody: true
+    });
+
+    const first = store.logRequest({
+      sessionId: "session-a",
+      startedAt: "2026-06-09T01:00:00.000Z",
+      method: "POST",
+      host: "api.anthropic.com",
+      path: "/v1/messages",
+      requestBody: { messages: [{ role: "user", content: "first" }] }
+    });
+    const second = store.logRequest({
+      sessionId: "session-a",
+      startedAt: "2026-06-09T01:01:00.000Z",
+      method: "POST",
+      host: "api.anthropic.com",
+      path: "/v1/messages",
+      requestBody: { messages: [{ role: "user", content: "second" }] }
+    });
+
+    expect(store.listRequestDetails("session-a").map((request) => request.id)).toEqual([first.id, second.id]);
+    expect(store.getPreviousRequestDetail(second.id)?.id).toBe(first.id);
+    expect(store.getPreviousRequestDetail(first.id)).toBeUndefined();
+  });
+
+  it("returns per-session request stats for diagnostics", () => {
+    store.createSession({
+      id: "empty-session",
+      projectPath: "D:\\code\\empty",
+      inspectBody: true
+    });
+    store.createSession({
+      id: "active-session",
+      projectPath: "D:\\code\\active",
+      inspectBody: true
+    });
+    store.logRequest({
+      sessionId: "active-session",
+      startedAt: "2026-06-09T01:00:00.000Z",
+      method: "POST",
+      host: "api.anthropic.com",
+      path: "/v1/messages"
+    });
+
+    expect(store.listSessionRequestStats()).toMatchObject([
+      {
+        sessionId: "active-session",
+        requestCount: 1,
+        lastRequestAt: "2026-06-09T01:00:00.000Z"
+      },
+      {
+        sessionId: "empty-session",
+        requestCount: 0,
+        lastRequestAt: null
+      }
+    ]);
+  });
+
   it("returns undefined for missing request detail", () => {
     expect(store.getRequestDetail(404)).toBeUndefined();
   });

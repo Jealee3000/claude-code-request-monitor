@@ -8,6 +8,7 @@ import type {
   PayloadRecord,
   RequestDetail,
   RequestRecord,
+  SessionRequestStats,
   SessionRecord
 } from "./types.js";
 
@@ -43,6 +44,16 @@ interface PayloadRow {
   request_body_json: string | null;
   response_headers_json: string | null;
   response_body_json: string | null;
+}
+
+interface SessionRequestStatsRow {
+  session_id: string;
+  started_at: string;
+  project_path: string;
+  inspect_body: 0 | 1;
+  claude_session_id: string | null;
+  request_count: number;
+  last_request_at: string | null;
 }
 
 export class RequestStore {
@@ -240,6 +251,68 @@ export class RequestStore {
       .all(sessionId) as RequestRow[];
 
     return rows.map(mapRequest);
+  }
+
+  listRequestDetails(sessionId: string): RequestDetail[] {
+    const rows = this.db
+      .prepare("SELECT id FROM requests WHERE session_id = ? ORDER BY started_at ASC, id ASC")
+      .all(sessionId) as Array<{ id: number }>;
+
+    return rows
+      .map((row) => this.getRequestDetail(row.id))
+      .filter((detail): detail is RequestDetail => detail !== undefined);
+  }
+
+  getPreviousRequestDetail(requestId: number): RequestDetail | undefined {
+    const current = this.db
+      .prepare("SELECT session_id, started_at, id FROM requests WHERE id = ?")
+      .get(requestId) as Pick<RequestRow, "session_id" | "started_at" | "id"> | undefined;
+
+    if (!current) {
+      return undefined;
+    }
+
+    const previous = this.db
+      .prepare(
+        `SELECT id
+         FROM requests
+         WHERE session_id = ?
+           AND (started_at < ? OR (started_at = ? AND id < ?))
+         ORDER BY started_at DESC, id DESC
+         LIMIT 1`
+      )
+      .get(current.session_id, current.started_at, current.started_at, current.id) as { id: number } | undefined;
+
+    return previous ? this.getRequestDetail(previous.id) : undefined;
+  }
+
+  listSessionRequestStats(): SessionRequestStats[] {
+    const rows = this.db
+      .prepare(
+        `SELECT
+          s.id AS session_id,
+          s.started_at,
+          s.project_path,
+          s.inspect_body,
+          s.claude_session_id,
+          COUNT(r.id) AS request_count,
+          MAX(r.started_at) AS last_request_at
+        FROM sessions s
+        LEFT JOIN requests r ON r.session_id = s.id
+        GROUP BY s.id
+        ORDER BY s.started_at DESC`
+      )
+      .all() as SessionRequestStatsRow[];
+
+    return rows.map((row) => ({
+      sessionId: row.session_id,
+      startedAt: row.started_at,
+      projectPath: row.project_path,
+      inspectBody: row.inspect_body === 1,
+      claudeSessionId: row.claude_session_id,
+      requestCount: row.request_count,
+      lastRequestAt: row.last_request_at
+    }));
   }
 
   getSessionByWatchToken(token: string): SessionRecord | undefined {

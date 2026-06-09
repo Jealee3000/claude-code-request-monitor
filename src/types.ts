@@ -74,3 +74,13 @@ export interface LoggedRequestInput {
 export interface RequestDetail extends RequestRecord {
   payload: PayloadRecord | null;
 }
+
+export interface SessionRequestStats {
+  sessionId: string;
+  startedAt: string;
+  projectPath: string;
+  inspectBody: boolean;
+  claudeSessionId: string | null;
+  requestCount: number;
+  lastRequestAt: string | null;
+}

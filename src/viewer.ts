@@ -2,6 +2,10 @@ import { randomBytes } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
 import { createSessionId } from "./config.js";
 import { defaultClaudeHome, listLocalClaudeSessions } from "./claude-sessions.js";
+import { buildContextDiff } from "./context-diff.js";
+import { buildDiagnostics } from "./diagnostics.js";
+import { parseResponsePreviewFromDetail } from "./response-stream.js";
+import { buildTurnTimeline } from "./turn-timeline.js";
 import type { RequestStore } from "./store.js";
 
 export interface ViewerOptions {
@@ -25,6 +29,8 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
 
   app.get("/api/sessions", async () => store.listSessions());
 
+  app.get("/api/diagnostics", async () => buildDiagnostics(store.listSessionRequestStats()));
+
   app.post<{ Body: CreateWatchSessionBody }>("/api/watch-sessions", async (request, reply) => {
     const projectPath = request.body?.projectPath;
     if (!projectPath) {
@@ -44,6 +50,30 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
 
   app.get<{ Params: { id: string } }>("/api/sessions/:id/requests", async (request) => {
     return store.listRequests(request.params.id);
+  });
+
+  app.get<{ Params: { id: string } }>("/api/sessions/:id/turns", async (request) => {
+    return buildTurnTimeline(store.listRequestDetails(request.params.id));
+  });
+
+  app.get<{ Params: { id: string } }>("/api/requests/:id/context-diff", async (request, reply) => {
+    const requestId = Number(request.params.id);
+    const current = Number.isFinite(requestId) ? store.getRequestDetail(requestId) : undefined;
+    if (!current) {
+      return reply.code(404).send({ error: "Request not found" });
+    }
+    return buildContextDiff(store.getPreviousRequestDetail(requestId), current);
+  });
+
+  app.get<{ Params: { id: string } }>("/api/requests/:id/response-preview", async (request, reply) => {
+    const requestId = Number(request.params.id);
+    const detail = Number.isFinite(requestId) ? store.getRequestDetail(requestId) : undefined;
+
+    if (!detail) {
+      return reply.code(404).send({ error: "Request not found" });
+    }
+
+    return parseResponsePreviewFromDetail(detail);
   });
 
   app.get<{ Params: { id: string } }>("/api/requests/:id", async (request, reply) => {
@@ -135,7 +165,7 @@ function renderHtml(repoRoot: string): string {
       top: 0;
       z-index: 3;
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 4px;
       padding: 8px;
       border-bottom: 1px solid var(--line);
@@ -190,6 +220,8 @@ function renderHtml(repoRoot: string): string {
     }
     button.small:hover { background: var(--subtle); }
     .session-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .issue { border-left: 3px solid var(--warn); padding-left: 8px; }
+    .issue.bad { border-left-color: var(--bad); }
     .primary { font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
     .secondary { margin-top: 4px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
     .detail { padding: 12px; }
@@ -303,6 +335,7 @@ function renderHtml(repoRoot: string): string {
       <div class="left-tabs" role="tablist" aria-label="Session lists">
         <button class="left-tab active" data-left-tab="monitor" type="button">Monitor</button>
         <button class="left-tab" data-left-tab="claude" type="button">Claude Sessions</button>
+        <button class="left-tab" data-left-tab="diagnostics" type="button">Diagnostics</button>
       </div>
       <div id="monitor-session-panel" class="left-tab-panel">
         <div class="section-title">Monitor Sessions</div>
@@ -311,6 +344,10 @@ function renderHtml(repoRoot: string): string {
       <div id="claude-session-panel" class="left-tab-panel hidden">
         <div class="section-title">Claude Sessions</div>
         <div id="claude-sessions" class="empty">Loading local Claude sessions...</div>
+      </div>
+      <div id="diagnostics-panel" class="left-tab-panel hidden">
+        <div class="section-title">Diagnostics</div>
+        <div id="diagnostics" class="empty">Loading diagnostics...</div>
       </div>
     </section>
     <section>
@@ -327,6 +364,8 @@ function renderHtml(repoRoot: string): string {
         </div>
         <div class="tabs" role="tablist">
           <button class="tab active" data-tab="overview" type="button">Overview</button>
+          <button class="tab" data-tab="timeline" type="button">Timeline</button>
+          <button class="tab" data-tab="diff" type="button">Diff</button>
           <button class="tab" data-tab="agent" type="button">Agent</button>
           <button class="tab" data-tab="headers" type="button">Headers</button>
           <button class="tab" data-tab="payload" type="button">Payload</button>
@@ -342,8 +381,12 @@ function renderHtml(repoRoot: string): string {
     const state = {
       sessions: [],
       claudeSessions: [],
+      diagnostics: null,
       requests: [],
+      timeline: [],
       detail: null,
+      contextDiff: null,
+      responsePreview: null,
       selectedSession: null,
       selectedRequest: null,
       tab: 'overview',
@@ -352,6 +395,7 @@ function renderHtml(repoRoot: string): string {
     };
     const sessionsEl = document.getElementById('sessions');
     const claudeSessionsEl = document.getElementById('claude-sessions');
+    const diagnosticsEl = document.getElementById('diagnostics');
     const requestsEl = document.getElementById('requests');
     const detailEl = document.getElementById('detail');
     const searchEl = document.getElementById('search');
@@ -388,20 +432,29 @@ function renderHtml(repoRoot: string): string {
       renderClaudeSessions();
     }
 
+    async function loadDiagnostics() {
+      state.diagnostics = await fetchJson('/api/diagnostics');
+      renderDiagnostics();
+    }
+
     function setLeftTab(tab) {
-      state.leftTab = tab === 'claude' ? 'claude' : 'monitor';
+      state.leftTab = tab === 'claude' || tab === 'diagnostics' ? tab : 'monitor';
       document.querySelectorAll('[data-left-tab]').forEach((button) => {
         button.classList.toggle('active', button.dataset.leftTab === state.leftTab);
       });
       document.getElementById('monitor-session-panel').classList.toggle('hidden', state.leftTab !== 'monitor');
       document.getElementById('claude-session-panel').classList.toggle('hidden', state.leftTab !== 'claude');
+      document.getElementById('diagnostics-panel').classList.toggle('hidden', state.leftTab !== 'diagnostics');
     }
 
     async function selectSession(id) {
       state.selectedSession = id;
       state.selectedRequest = null;
       state.detail = null;
+      state.contextDiff = null;
+      state.responsePreview = null;
       await refreshRequests({ resetSelection: true });
+      await loadTimeline();
       renderSessions();
       renderDetail();
     }
@@ -417,17 +470,36 @@ function renderHtml(repoRoot: string): string {
         } else if (previousRequest && !state.requests.some((request) => request.id === previousRequest)) {
           state.selectedRequest = null;
           state.detail = null;
+          state.contextDiff = null;
+          state.responsePreview = null;
           renderDetail();
         }
         renderRequests();
+        await loadTimeline();
       } finally {
         state.refreshingRequests = false;
       }
     }
 
+    async function loadTimeline() {
+      if (!state.selectedSession) {
+        state.timeline = [];
+        return;
+      }
+      state.timeline = await fetchJson('/api/sessions/' + encodeURIComponent(state.selectedSession) + '/turns');
+    }
+
     async function selectRequest(id) {
       state.selectedRequest = id;
-      state.detail = await fetchJson('/api/requests/' + encodeURIComponent(id));
+      const encodedId = encodeURIComponent(id);
+      const [detail, contextDiff, responsePreview] = await Promise.all([
+        fetchJson('/api/requests/' + encodedId),
+        fetchJson('/api/requests/' + encodedId + '/context-diff'),
+        fetchJson('/api/requests/' + encodedId + '/response-preview')
+      ]);
+      state.detail = detail;
+      state.contextDiff = contextDiff;
+      state.responsePreview = responsePreview;
       renderRequests();
       renderDetail();
     }
@@ -485,6 +557,29 @@ function renderHtml(repoRoot: string): string {
       })).join('');
     }
 
+    function renderDiagnostics() {
+      if (!state.diagnostics) {
+        diagnosticsEl.className = 'empty';
+        diagnosticsEl.textContent = 'Loading diagnostics...';
+        return;
+      }
+      diagnosticsEl.className = '';
+      const d = state.diagnostics;
+      const issues = d.issues && d.issues.length
+        ? d.issues.map((issue) => '<div class="panel issue ' + escapeHtml(issue.severity) + '">' +
+            '<div class="primary">' + escapeHtml(issue.code) + '</div>' +
+            '<div class="secondary">' + escapeHtml(issue.message) + '</div>' +
+            (issue.sessionId ? '<div class="secondary">' + escapeHtml(issue.sessionId) + '</div>' : '') +
+          '</div>').join('')
+        : '<div class="panel"><div class="secondary">No capture issues detected.</div></div>';
+      diagnosticsEl.innerHTML = '<div class="metric-grid">' +
+        metric('Sessions', d.totalSessions) +
+        metric('Active', d.activeSessions) +
+        metric('Zero request', d.zeroRequestSessions) +
+        metric('Latest request', d.latestRequestAt || 'none') +
+        '</div>' + issues;
+    }
+
     function powerShellCommand(session) {
       return 'cd "' + repoRoot + '"; npm.cmd run watch -- run --project "' +
         session.projectPath + '" --resume ' + session.sessionId;
@@ -519,6 +614,8 @@ function renderHtml(repoRoot: string): string {
       detailEl.className = '';
       const htmlByTab = {
         overview: renderOverview,
+        timeline: renderTimeline,
+        diff: renderContextDiff,
         agent: renderAgent,
         headers: renderHeaders,
         payload: renderPayload,
@@ -543,6 +640,48 @@ function renderHtml(repoRoot: string): string {
         metric('Events', detail.eventCount) +
         '</div>' +
         '<div class="panel"><div class="panel-title">Agent quick read</div>' + renderAgentSummaryCompact() + '</div>';
+    }
+
+    function renderTimeline() {
+      if (!state.selectedSession) {
+        return '<div class="empty">Select a session</div>';
+      }
+      if (!state.timeline.length) {
+        return '<div class="empty">No agent turns detected for this session.</div>';
+      }
+      return state.timeline.map((turn) => {
+        const requestId = turn.requestIds[turn.requestIds.length - 1];
+        return '<button class="row" type="button" onclick="selectRequest(' + requestId + ')">' +
+          '<div class="primary">' + escapeHtml(turn.latestUserPreview || 'No user text') + '</div>' +
+          '<div class="secondary">' + escapeHtml(turn.firstRequestAt + ' - ' + turn.requestCount + ' request(s) - ' + (turn.model || 'unknown model')) + '</div>' +
+          '<div class="secondary">Tools: ' + escapeHtml(turn.toolNames.join(', ') || 'none') + '</div>' +
+          '<div class="secondary">Context chars: ' + escapeHtml(turn.maxContextChars) + ' - tool_use/results: ' + escapeHtml(turn.toolUseCount + ' / ' + turn.toolResultCount) + '</div>' +
+          '</button>';
+      }).join('');
+    }
+
+    function renderContextDiff() {
+      const diff = state.contextDiff;
+      if (!diff) {
+        return '<div class="empty">Select a request</div>';
+      }
+      if (!diff.comparable) {
+        return '<div class="empty">' + escapeHtml(diff.reason || 'No comparable request') + '</div>';
+      }
+      return '<div class="metric-grid">' +
+        metric('Messages delta', signed(diff.deltas.messageCount)) +
+        metric('Context delta', signed(diff.deltas.estimatedContextChars)) +
+        metric('System delta', signed(diff.deltas.systemChars)) +
+        metric('Tools delta', signed(diff.deltas.toolCount)) +
+        metric('Tool use delta', signed(diff.deltas.toolUseCount)) +
+        metric('Tool result delta', signed(diff.deltas.toolResultCount)) +
+        '</div>' +
+        '<div class="panel"><div class="panel-title">Latest user text</div>' +
+        '<div class="secondary">Previous: ' + escapeHtml(diff.previousLatestUserText || 'none') + '</div>' +
+        '<div class="secondary">Current: ' + escapeHtml(diff.currentLatestUserText || 'none') + '</div>' +
+        '</div>' +
+        '<div class="panel"><div class="panel-title">Tools added</div>' + renderList(diff.tools.added) + '</div>' +
+        '<div class="panel"><div class="panel-title">Tools removed</div>' + renderList(diff.tools.removed) + '</div>';
     }
 
     function renderAgent() {
@@ -586,9 +725,44 @@ function renderHtml(repoRoot: string): string {
     }
 
     function renderResponse() {
-      return '<div class="panel"><div class="panel-title">Response body</div>' +
-        renderJsonTree(payloadValue('responseBodyJson'), 'response') +
-        '</div>';
+      return renderResponsePreview(state.responsePreview);
+    }
+
+    function renderResponsePreview(preview) {
+      if (!preview || !preview.stream) {
+        return '<div class="panel"><div class="panel-title">Response body</div>' +
+          renderJsonTree(payloadValue('responseBodyJson'), 'response') +
+          '</div>';
+      }
+
+      const thinking = preview.thinkingText
+        ? '<div class="panel"><div class="panel-title">Thinking</div><pre class="raw">' + escapeHtml(preview.thinkingText) + '</pre></div>'
+        : '';
+      return '<div class="metric-grid">' +
+        metric('Response Preview', 'stream') +
+        metric('Events', preview.events.length) +
+        metric('Input tokens', preview.usage.inputTokens ?? 'unknown') +
+        metric('Output tokens', preview.usage.outputTokens ?? 'unknown') +
+        metric('Tool uses', preview.toolUses.length) +
+        '</div>' +
+        '<div class="panel"><div class="panel-title">Assistant text</div><pre class="raw">' +
+        escapeHtml(preview.assistantText || 'none') +
+        '</pre></div>' +
+        thinking +
+        '<div class="panel"><div class="panel-title">Tool uses</div>' + renderToolUsePreview(preview.toolUses) + '</div>' +
+        '<div class="panel"><div class="panel-title">Events</div>' + renderJsonTree(preview.events, 'events') + '</div>' +
+        '<div class="panel"><div class="panel-title">Raw stream</div><pre class="raw">' + escapeHtml(preview.rawText || '') + '</pre></div>';
+    }
+
+    function renderToolUsePreview(toolUses) {
+      if (!toolUses || !toolUses.length) return '<span class="secondary">none</span>';
+      return toolUses.map((tool) => {
+        return '<div class="row">' +
+          '<div class="primary">' + escapeHtml((tool.name || 'unknown tool') + ' #' + tool.index) + '</div>' +
+          '<div class="secondary">' + escapeHtml(tool.id || 'no id') + '</div>' +
+          '<pre class="raw">' + escapeHtml(tool.inputJson || '{}') + '</pre>' +
+          '</div>';
+      }).join('');
     }
 
     function renderRaw() {
@@ -759,6 +933,10 @@ function renderHtml(repoRoot: string): string {
       return '<div class="metric"><div class="metric-label">' + escapeHtml(label) + '</div><div class="metric-value">' + escapeHtml(String(value)) + '</div></div>';
     }
 
+    function signed(value) {
+      return value > 0 ? '+' + value : String(value);
+    }
+
     async function fetchJson(url) {
       const response = await fetch(url);
       if (!response.ok) throw new Error(await response.text());
@@ -787,8 +965,13 @@ function renderHtml(repoRoot: string): string {
       claudeSessionsEl.className = 'empty bad';
       claudeSessionsEl.textContent = error.message;
     });
+    loadDiagnostics().catch((error) => {
+      diagnosticsEl.className = 'empty bad';
+      diagnosticsEl.textContent = error.message;
+    });
     setInterval(() => {
       refreshRequests().catch(showRequestError);
+      loadDiagnostics().catch(() => {});
     }, 2000);
   </script>
 </body>
