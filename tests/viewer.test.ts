@@ -194,6 +194,34 @@ describe("viewer", () => {
     });
   });
 
+  it("returns turn detail for a request", async () => {
+    const requests = store.listRequests("session-a");
+    const response = await app.inject({ method: "GET", url: `/api/requests/${requests[0].id}/turn-detail` });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      latestUserText: "next question",
+      requestIds: [requests[0].id],
+      requestCount: 1,
+      finalAssistantText: "I will inspect ",
+      toolUses: [
+        {
+          requestId: requests[0].id,
+          name: "Read",
+          inputJson: '{"file_path":"src/viewer.ts"}'
+        }
+      ],
+      steps: [
+        {
+          requestId: requests[0].id,
+          stepIndex: 1,
+          contextDelta: null,
+          responseToolUseCount: 1
+        }
+      ]
+    });
+  });
+
   it("returns capture diagnostics", async () => {
     const response = await app.inject({ method: "GET", url: "/api/diagnostics" });
 
@@ -247,6 +275,7 @@ describe("viewer", () => {
     expect(response.body).toContain("claude-watch-root");
     expect(response.body).toContain("Overview");
     expect(response.body).toContain("Timeline");
+    expect(response.body).toContain("Turn");
     expect(response.body).toContain("Diff");
     expect(response.body).toContain("Diagnostics");
     expect(response.body).toContain("Agent");
@@ -269,5 +298,7 @@ describe("viewer", () => {
     expect(response.body).toContain("renderContextDiff");
     expect(response.body).toContain("responsePreview");
     expect(response.body).toContain("renderResponsePreview");
+    expect(response.body).toContain("turnDetail");
+    expect(response.body).toContain("renderTurnDetail");
   });
 });

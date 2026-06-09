@@ -5,6 +5,7 @@ import { defaultClaudeHome, listLocalClaudeSessions } from "./claude-sessions.js
 import { buildContextDiff } from "./context-diff.js";
 import { buildDiagnostics } from "./diagnostics.js";
 import { parseResponsePreviewFromDetail } from "./response-stream.js";
+import { buildTurnDetail } from "./turn-detail.js";
 import { buildTurnTimeline } from "./turn-timeline.js";
 import type { RequestStore } from "./store.js";
 
@@ -74,6 +75,17 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
     }
 
     return parseResponsePreviewFromDetail(detail);
+  });
+
+  app.get<{ Params: { id: string } }>("/api/requests/:id/turn-detail", async (request, reply) => {
+    const requestId = Number(request.params.id);
+    const detail = Number.isFinite(requestId) ? store.getRequestDetail(requestId) : undefined;
+
+    if (!detail) {
+      return reply.code(404).send({ error: "Request not found" });
+    }
+
+    return buildTurnDetail(store.listRequestDetails(detail.sessionId), requestId);
   });
 
   app.get<{ Params: { id: string } }>("/api/requests/:id", async (request, reply) => {
@@ -365,6 +377,7 @@ function renderHtml(repoRoot: string): string {
         <div class="tabs" role="tablist">
           <button class="tab active" data-tab="overview" type="button">Overview</button>
           <button class="tab" data-tab="timeline" type="button">Timeline</button>
+          <button class="tab" data-tab="turn" type="button">Turn</button>
           <button class="tab" data-tab="diff" type="button">Diff</button>
           <button class="tab" data-tab="agent" type="button">Agent</button>
           <button class="tab" data-tab="headers" type="button">Headers</button>
@@ -387,6 +400,7 @@ function renderHtml(repoRoot: string): string {
       detail: null,
       contextDiff: null,
       responsePreview: null,
+      turnDetail: null,
       selectedSession: null,
       selectedRequest: null,
       tab: 'overview',
@@ -414,11 +428,7 @@ function renderHtml(repoRoot: string): string {
       }
     });
     document.querySelectorAll('.tab').forEach((button) => {
-      button.addEventListener('click', () => {
-        state.tab = button.dataset.tab;
-        document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.tab === state.tab));
-        renderDetail();
-      });
+      button.addEventListener('click', () => setDetailTab(button.dataset.tab));
     });
 
     async function loadSessions() {
@@ -453,6 +463,7 @@ function renderHtml(repoRoot: string): string {
       state.detail = null;
       state.contextDiff = null;
       state.responsePreview = null;
+      state.turnDetail = null;
       await refreshRequests({ resetSelection: true });
       await loadTimeline();
       renderSessions();
@@ -472,6 +483,7 @@ function renderHtml(repoRoot: string): string {
           state.detail = null;
           state.contextDiff = null;
           state.responsePreview = null;
+          state.turnDetail = null;
           renderDetail();
         }
         renderRequests();
@@ -489,19 +501,35 @@ function renderHtml(repoRoot: string): string {
       state.timeline = await fetchJson('/api/sessions/' + encodeURIComponent(state.selectedSession) + '/turns');
     }
 
-    async function selectRequest(id) {
+    async function selectRequest(id, nextTab) {
       state.selectedRequest = id;
       const encodedId = encodeURIComponent(id);
-      const [detail, contextDiff, responsePreview] = await Promise.all([
+      const [detail, contextDiff, responsePreview, turnDetail] = await Promise.all([
         fetchJson('/api/requests/' + encodedId),
         fetchJson('/api/requests/' + encodedId + '/context-diff'),
-        fetchJson('/api/requests/' + encodedId + '/response-preview')
+        fetchJson('/api/requests/' + encodedId + '/response-preview'),
+        fetchJson('/api/requests/' + encodedId + '/turn-detail')
       ]);
       state.detail = detail;
       state.contextDiff = contextDiff;
       state.responsePreview = responsePreview;
+      state.turnDetail = turnDetail;
+      if (nextTab) {
+        state.tab = nextTab;
+        syncDetailTabs();
+      }
       renderRequests();
       renderDetail();
+    }
+
+    function setDetailTab(tab) {
+      state.tab = tab || 'overview';
+      syncDetailTabs();
+      renderDetail();
+    }
+
+    function syncDetailTabs() {
+      document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.tab === state.tab));
     }
 
     function renderSessions() {
@@ -615,6 +643,7 @@ function renderHtml(repoRoot: string): string {
       const htmlByTab = {
         overview: renderOverview,
         timeline: renderTimeline,
+        turn: renderTurnDetail,
         diff: renderContextDiff,
         agent: renderAgent,
         headers: renderHeaders,
@@ -651,13 +680,54 @@ function renderHtml(repoRoot: string): string {
       }
       return state.timeline.map((turn) => {
         const requestId = turn.requestIds[turn.requestIds.length - 1];
-        return '<button class="row" type="button" onclick="selectRequest(' + requestId + ')">' +
+        return '<button class="row" type="button" onclick="selectRequest(' + requestId + ', \\'turn\\')">' +
           '<div class="primary">' + escapeHtml(turn.latestUserPreview || 'No user text') + '</div>' +
           '<div class="secondary">' + escapeHtml(turn.firstRequestAt + ' - ' + turn.requestCount + ' request(s) - ' + (turn.model || 'unknown model')) + '</div>' +
           '<div class="secondary">Tools: ' + escapeHtml(turn.toolNames.join(', ') || 'none') + '</div>' +
           '<div class="secondary">Context chars: ' + escapeHtml(turn.maxContextChars) + ' - tool_use/results: ' + escapeHtml(turn.toolUseCount + ' / ' + turn.toolResultCount) + '</div>' +
           '</button>';
       }).join('');
+    }
+
+    function renderTurnDetail() {
+      const turn = state.turnDetail;
+      if (!turn) {
+        return '<div class="empty">Select an agent request to inspect its turn.</div>';
+      }
+      return '<div class="metric-grid">' +
+        metric('Turn requests', turn.requestCount) +
+        metric('First request', turn.firstRequestAt) +
+        metric('Last request', turn.lastRequestAt) +
+        metric('Tool uses', turn.toolUses.length) +
+        '</div>' +
+        '<div class="panel"><div class="panel-title">Latest user text</div><pre class="raw">' +
+        escapeHtml(turn.latestUserText || 'none') +
+        '</pre></div>' +
+        '<div class="panel"><div class="panel-title">Final assistant text</div><pre class="raw">' +
+        escapeHtml(turn.finalAssistantText || 'none') +
+        '</pre></div>' +
+        '<div class="panel"><div class="panel-title">Turn tool uses</div>' + renderTurnToolUses(turn.toolUses) + '</div>' +
+        '<div class="panel"><div class="panel-title">Request steps</div>' + renderTurnSteps(turn.steps) + '</div>';
+    }
+
+    function renderTurnToolUses(toolUses) {
+      if (!toolUses || !toolUses.length) return '<span class="secondary">none</span>';
+      return toolUses.map((tool) => '<div class="row">' +
+        '<div class="primary">' + escapeHtml((tool.name || 'unknown tool') + ' - request ' + tool.requestId) + '</div>' +
+        '<div class="secondary">' + escapeHtml(tool.id || 'no id') + '</div>' +
+        '<pre class="raw">' + escapeHtml(tool.inputJson || '{}') + '</pre>' +
+        '</div>').join('');
+    }
+
+    function renderTurnSteps(steps) {
+      if (!steps || !steps.length) return '<span class="secondary">none</span>';
+      return steps.map((step) => '<button class="row" type="button" onclick="selectRequest(' + step.requestId + ', \\'turn\\')">' +
+        '<div class="primary">#' + escapeHtml(step.stepIndex) + ' request ' + escapeHtml(step.requestId) + '</div>' +
+        '<div class="secondary">' + escapeHtml(step.startedAt + ' - ' + (step.model || 'unknown model') + ' - status ' + (step.statusCode ?? 'pending')) + '</div>' +
+        '<div class="secondary">Context: ' + escapeHtml(step.contextChars) + ' (' + escapeHtml(step.contextDelta === null ? 'first' : signed(step.contextDelta)) + ') - messages: ' + escapeHtml(step.messageCount) + '</div>' +
+        '<div class="secondary">Tools: ' + escapeHtml(step.toolNames.join(', ') || 'none') + ' - response tool uses: ' + escapeHtml(step.responseToolUseCount) + '</div>' +
+        '<div class="secondary">Response: ' + escapeHtml(truncateText(step.responseAssistantText || 'none', 220)) + '</div>' +
+        '</button>').join('');
     }
 
     function renderContextDiff() {
@@ -935,6 +1005,11 @@ function renderHtml(repoRoot: string): string {
 
     function signed(value) {
       return value > 0 ? '+' + value : String(value);
+    }
+
+    function truncateText(value, max) {
+      const text = String(value);
+      return text.length <= max ? text : text.slice(0, max - 1) + '...';
     }
 
     async function fetchJson(url) {
