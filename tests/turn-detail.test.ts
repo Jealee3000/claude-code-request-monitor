@@ -14,8 +14,8 @@ describe("turn detail", () => {
         model: "claude",
         messages: [
           { role: "user", content: "inspect this file" },
-          { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "Read" }] },
-          { role: "user", content: [{ type: "tool_result", content: "viewer contents" }] }
+          { role: "assistant", content: [{ type: "tool_use", id: "toolu_Read", name: "Read" }] },
+          { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_Read", content: "viewer contents" }] }
         ],
         tools: [
           { name: "Read", input_schema: { properties: { file_path: { type: "string" } } } },
@@ -37,6 +37,19 @@ describe("turn detail", () => {
       toolUses: [
         { requestId: 1, name: "Read", inputJson: '{"file_path":"src/viewer.ts"}' },
         { requestId: 2, name: "Edit", inputJson: '{"file_path":"src/viewer.ts","old_string":"Response"}' }
+      ],
+      toolLoops: [
+        {
+          toolUseId: "toolu_Read",
+          name: "Read",
+          inputJson: '{"file_path":"src/viewer.ts"}',
+          toolUseRequestId: 1,
+          resultRequestId: 2,
+          resultPreview: "viewer contents",
+          resultChars: 15,
+          isError: false,
+          contextDeltaAfterResult: expect.any(Number)
+        }
       ],
       steps: [
         {

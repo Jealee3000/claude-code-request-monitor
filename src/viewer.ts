@@ -706,8 +706,20 @@ function renderHtml(repoRoot: string): string {
         '<div class="panel"><div class="panel-title">Final assistant text</div><pre class="raw">' +
         escapeHtml(turn.finalAssistantText || 'none') +
         '</pre></div>' +
+        '<div class="panel"><div class="panel-title">Tool Loop</div>' + renderToolLoops(turn.toolLoops) + '</div>' +
         '<div class="panel"><div class="panel-title">Turn tool uses</div>' + renderTurnToolUses(turn.toolUses) + '</div>' +
         '<div class="panel"><div class="panel-title">Request steps</div>' + renderTurnSteps(turn.steps) + '</div>';
+    }
+
+    function renderToolLoops(toolLoops) {
+      if (!toolLoops || !toolLoops.length) return '<span class="secondary">none</span>';
+      return toolLoops.map((loop) => '<div class="row">' +
+        '<div class="primary">' + escapeHtml((loop.name || 'unknown tool') + ' - ' + loop.toolUseId) + '</div>' +
+        '<div class="secondary">tool_use request ' + escapeHtml(loop.toolUseRequestId) + ' -> result request ' + escapeHtml(loop.resultRequestId) + '</div>' +
+        '<div class="secondary">Result chars: ' + escapeHtml(loop.resultChars) + ' - Error: ' + escapeHtml(loop.isError) + ' - Context delta: ' + escapeHtml(loop.contextDeltaAfterResult === null ? 'unknown' : signed(loop.contextDeltaAfterResult)) + '</div>' +
+        '<div class="secondary">Input</div><pre class="raw">' + escapeHtml(loop.inputJson || '{}') + '</pre>' +
+        '<div class="secondary">Result preview</div><pre class="raw">' + escapeHtml(loop.resultPreview || 'none') + '</pre>' +
+        '</div>').join('');
     }
 
     function renderTurnToolUses(toolUses) {

@@ -6,6 +6,18 @@ export interface TurnDetailToolUse extends ResponseStreamToolUse {
   requestId: number;
 }
 
+export interface TurnDetailToolLoop {
+  toolUseId: string;
+  name: string | null;
+  inputJson: string;
+  toolUseRequestId: number;
+  resultRequestId: number;
+  resultPreview: string;
+  resultChars: number;
+  isError: boolean;
+  contextDeltaAfterResult: number | null;
+}
+
 export interface TurnDetailStep {
   requestId: number;
   stepIndex: number;
@@ -36,6 +48,7 @@ export interface TurnDetail {
   requestCount: number;
   finalAssistantText: string;
   toolUses: TurnDetailToolUse[];
+  toolLoops: TurnDetailToolLoop[];
   steps: TurnDetailStep[];
 }
 
@@ -60,6 +73,8 @@ export function buildTurnDetail(details: RequestDetail[], selectedRequestId: num
   let previousContextChars: number | null = null;
   let finalAssistantText = "";
   const toolUses: TurnDetailToolUse[] = [];
+  const knownToolUses = new Map<string, TurnDetailToolUse>();
+  const toolLoops: TurnDetailToolLoop[] = [];
   const steps = turnItems.map((item, index) => {
     const response = parseResponsePreviewFromDetail(item.detail);
     const contextDelta = previousContextChars === null
@@ -69,7 +84,31 @@ export function buildTurnDetail(details: RequestDetail[], selectedRequestId: num
     if (response.assistantText) {
       finalAssistantText = response.assistantText;
     }
-    toolUses.push(...response.toolUses.map((tool) => ({ ...tool, requestId: item.detail.id })));
+
+    for (const result of extractToolResults(item.detail)) {
+      const toolUse = knownToolUses.get(result.toolUseId);
+      if (!toolUse) {
+        continue;
+      }
+      toolLoops.push({
+        toolUseId: result.toolUseId,
+        name: toolUse.name,
+        inputJson: toolUse.inputJson,
+        toolUseRequestId: toolUse.requestId,
+        resultRequestId: item.detail.id,
+        resultPreview: result.resultPreview,
+        resultChars: result.resultChars,
+        isError: result.isError,
+        contextDeltaAfterResult: contextDelta
+      });
+    }
+
+    for (const toolUse of response.toolUses.map((tool) => ({ ...tool, requestId: item.detail.id }))) {
+      toolUses.push(toolUse);
+      if (toolUse.id) {
+        knownToolUses.set(toolUse.id, toolUse);
+      }
+    }
 
     return {
       requestId: item.detail.id,
@@ -99,10 +138,91 @@ export function buildTurnDetail(details: RequestDetail[], selectedRequestId: num
     requestCount: turnItems.length,
     finalAssistantText,
     toolUses,
+    toolLoops,
     steps
   };
 }
 
 function turnKey(detail: RequestDetail, payload: ExtractedAgentPayload): string {
   return payload.latestUserText ? `user:${payload.latestUserText}` : `request:${detail.id}`;
+}
+
+function extractToolResults(detail: RequestDetail): Array<{
+  toolUseId: string;
+  resultPreview: string;
+  resultChars: number;
+  isError: boolean;
+}> {
+  const body = parseRequestBody(detail);
+  const messages = isRecord(body) && Array.isArray(body.messages) ? body.messages : [];
+  const results: Array<{
+    toolUseId: string;
+    resultPreview: string;
+    resultChars: number;
+    isError: boolean;
+  }> = [];
+
+  for (const message of messages) {
+    if (!isRecord(message)) {
+      continue;
+    }
+    const blocks = Array.isArray(message.content) ? message.content : [message.content];
+    for (const block of blocks) {
+      if (!isRecord(block) || block.type !== "tool_result" || typeof block.tool_use_id !== "string") {
+        continue;
+      }
+      const text = contentText(block.content);
+      results.push({
+        toolUseId: block.tool_use_id,
+        resultPreview: truncate(text, 500),
+        resultChars: text.length,
+        isError: block.is_error === true
+      });
+    }
+  }
+
+  return results;
+}
+
+function parseRequestBody(detail: RequestDetail): unknown {
+  const value = detail.payload?.requestBodyJson;
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function contentText(value: unknown): string {
+  if (value === undefined || value === null) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(contentText).filter(Boolean).join("\n");
+  }
+  if (isRecord(value)) {
+    if (typeof value.text === "string") {
+      return value.text;
+    }
+    if (value.content !== undefined) {
+      return contentText(value.content);
+    }
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function truncate(value: string, max: number): string {
+  return value.length <= max ? value : `${value.slice(0, max - 1)}...`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

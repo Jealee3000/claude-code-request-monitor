@@ -204,6 +204,7 @@ describe("viewer", () => {
       requestIds: [requests[0].id],
       requestCount: 1,
       finalAssistantText: "I will inspect ",
+      toolLoops: [],
       toolUses: [
         {
           requestId: requests[0].id,
@@ -300,5 +301,7 @@ describe("viewer", () => {
     expect(response.body).toContain("renderResponsePreview");
     expect(response.body).toContain("turnDetail");
     expect(response.body).toContain("renderTurnDetail");
+    expect(response.body).toContain("Tool Loop");
+    expect(response.body).toContain("renderToolLoops");
   });
 });
