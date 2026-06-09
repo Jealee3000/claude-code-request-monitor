@@ -5,6 +5,7 @@ import { defaultClaudeHome, listLocalClaudeSessions } from "./claude-sessions.js
 import { buildContextDiff } from "./context-diff.js";
 import { buildDiagnostics } from "./diagnostics.js";
 import { parseResponsePreviewFromDetail } from "./response-stream.js";
+import { buildSystemPromptPreview } from "./system-prompt.js";
 import { buildTurnDetail } from "./turn-detail.js";
 import { buildTurnTimeline } from "./turn-timeline.js";
 import type { RequestStore } from "./store.js";
@@ -86,6 +87,17 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
     }
 
     return buildTurnDetail(store.listRequestDetails(detail.sessionId), requestId);
+  });
+
+  app.get<{ Params: { id: string } }>("/api/requests/:id/system-prompt", async (request, reply) => {
+    const requestId = Number(request.params.id);
+    const detail = Number.isFinite(requestId) ? store.getRequestDetail(requestId) : undefined;
+
+    if (!detail) {
+      return reply.code(404).send({ error: "Request not found" });
+    }
+
+    return buildSystemPromptPreview(detail);
   });
 
   app.get<{ Params: { id: string } }>("/api/requests/:id", async (request, reply) => {
@@ -380,6 +392,7 @@ function renderHtml(repoRoot: string): string {
           <button class="tab" data-tab="turn" type="button">Turn</button>
           <button class="tab" data-tab="diff" type="button">Diff</button>
           <button class="tab" data-tab="agent" type="button">Agent</button>
+          <button class="tab" data-tab="system" type="button">System</button>
           <button class="tab" data-tab="headers" type="button">Headers</button>
           <button class="tab" data-tab="payload" type="button">Payload</button>
           <button class="tab" data-tab="response" type="button">Response</button>
@@ -401,6 +414,7 @@ function renderHtml(repoRoot: string): string {
       contextDiff: null,
       responsePreview: null,
       turnDetail: null,
+      systemPrompt: null,
       selectedSession: null,
       selectedRequest: null,
       tab: 'overview',
@@ -464,6 +478,7 @@ function renderHtml(repoRoot: string): string {
       state.contextDiff = null;
       state.responsePreview = null;
       state.turnDetail = null;
+      state.systemPrompt = null;
       await refreshRequests({ resetSelection: true });
       await loadTimeline();
       renderSessions();
@@ -484,6 +499,7 @@ function renderHtml(repoRoot: string): string {
           state.contextDiff = null;
           state.responsePreview = null;
           state.turnDetail = null;
+          state.systemPrompt = null;
           renderDetail();
         }
         renderRequests();
@@ -504,16 +520,18 @@ function renderHtml(repoRoot: string): string {
     async function selectRequest(id, nextTab) {
       state.selectedRequest = id;
       const encodedId = encodeURIComponent(id);
-      const [detail, contextDiff, responsePreview, turnDetail] = await Promise.all([
+      const [detail, contextDiff, responsePreview, turnDetail, systemPrompt] = await Promise.all([
         fetchJson('/api/requests/' + encodedId),
         fetchJson('/api/requests/' + encodedId + '/context-diff'),
         fetchJson('/api/requests/' + encodedId + '/response-preview'),
-        fetchJson('/api/requests/' + encodedId + '/turn-detail')
+        fetchJson('/api/requests/' + encodedId + '/turn-detail'),
+        fetchJson('/api/requests/' + encodedId + '/system-prompt')
       ]);
       state.detail = detail;
       state.contextDiff = contextDiff;
       state.responsePreview = responsePreview;
       state.turnDetail = turnDetail;
+      state.systemPrompt = systemPrompt;
       if (nextTab) {
         state.tab = nextTab;
         syncDetailTabs();
@@ -646,6 +664,7 @@ function renderHtml(repoRoot: string): string {
         turn: renderTurnDetail,
         diff: renderContextDiff,
         agent: renderAgent,
+        system: renderSystemPrompt,
         headers: renderHeaders,
         payload: renderPayload,
         response: renderResponse,
@@ -790,6 +809,52 @@ function renderHtml(repoRoot: string): string {
         '<div class="panel"><div class="panel-title">Roles</div>' + renderJsonTree(summary.messageRoles, 'roles') + '</div>' +
         '<div class="panel"><div class="panel-title">Tools</div>' + renderList(summary.toolNames) + '</div>' +
         '<div class="panel"><div class="panel-title">Request body</div>' + renderJsonTree(requestBody, 'request') + '</div>';
+    }
+
+    function renderSystemPrompt() {
+      const system = state.systemPrompt;
+      if (!system) {
+        return '<div class="empty">No captured system prompt or tool schema for this request.</div>';
+      }
+      return '<div class="metric-grid">' +
+        metric('Model', system.model ?? 'unknown') +
+        metric('System chars', system.systemChars) +
+        metric('System blocks', system.systemBlockCount) +
+        metric('Suspected skills', system.suspectedSkillCount) +
+        metric('Tools', system.toolCount) +
+        metric('Tool schema chars', system.totalToolSchemaChars) +
+        '</div>' +
+        '<div class="panel"><div class="panel-title">Skill Explorer</div>' + renderSystemSkills(system.suspectedSkills) + '</div>' +
+        '<div class="panel"><div class="panel-title">Tool Schemas</div>' + renderSystemTools(system.tools) + '</div>' +
+        '<div class="panel"><div class="panel-title">System Blocks</div>' + renderSystemBlocks(system.systemBlocks) + '</div>';
+    }
+
+    function renderSystemSkills(skills) {
+      if (!skills || !skills.length) return '<span class="secondary">none</span>';
+      return skills.map((skill) => '<div class="row">' +
+        '<div class="primary">' + escapeHtml(skill.name) + '</div>' +
+        '<div class="secondary">' + escapeHtml(skill.description) + '</div>' +
+        '<div class="secondary">Chars: ' + escapeHtml(skill.chars) + '</div>' +
+        '<pre class="raw">' + escapeHtml(skill.preview || '') + '</pre>' +
+        '</div>').join('');
+    }
+
+    function renderSystemTools(tools) {
+      if (!tools || !tools.length) return '<span class="secondary">none</span>';
+      return tools.map((tool) => '<div class="row">' +
+        '<div class="primary">' + escapeHtml(tool.name) + '</div>' +
+        '<div class="secondary">' + escapeHtml(tool.descriptionPreview || 'No description') + '</div>' +
+        '<div class="secondary">Schema chars: ' + escapeHtml(tool.schemaChars) + ' - Input schema chars: ' + escapeHtml(tool.inputSchemaChars) + '</div>' +
+        '</div>').join('');
+    }
+
+    function renderSystemBlocks(blocks) {
+      if (!blocks || !blocks.length) return '<span class="secondary">none</span>';
+      return blocks.map((block) => '<div class="row">' +
+        '<div class="primary">#' + escapeHtml(block.index + 1) + ' ' + escapeHtml(block.type) + '</div>' +
+        '<div class="secondary">Chars: ' + escapeHtml(block.chars) + '</div>' +
+        '<pre class="raw">' + escapeHtml(block.preview || '') + '</pre>' +
+        '</div>').join('');
     }
 
     function renderHeaders() {

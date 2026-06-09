@@ -37,12 +37,44 @@ beforeEach(async () => {
     statusCode: 200,
     contentType: "text/event-stream",
     requestBody: {
+      system: [
+        {
+          type: "text",
+          text: [
+            "Claude Code system prompt.",
+            "name: browser:control-in-app-browser",
+            "description: Control the in-app browser for local web targets."
+          ].join("\n")
+        }
+      ],
       messages: [
         { role: "user", content: "hello" },
         { role: "assistant", content: [{ type: "tool_use", name: "Read" }] },
         { role: "user", content: "next question" }
       ],
-      tools: [{ name: "Read" }, { name: "Edit" }]
+      tools: [
+        {
+          name: "Read",
+          description: "Read a file from disk",
+          input_schema: {
+            type: "object",
+            properties: { file_path: { type: "string" } },
+            required: ["file_path"]
+          }
+        },
+        {
+          name: "Edit",
+          description: "Edit a file",
+          input_schema: {
+            type: "object",
+            properties: {
+              file_path: { type: "string" },
+              old_string: { type: "string" },
+              new_string: { type: "string" }
+            }
+          }
+        }
+      ]
     },
     responseHeaders: { "content-type": "text/event-stream" },
     responseBody: [
@@ -223,6 +255,30 @@ describe("viewer", () => {
     });
   });
 
+  it("returns system prompt preview for a request", async () => {
+    const requests = store.listRequests("session-a");
+    const response = await app.inject({ method: "GET", url: `/api/requests/${requests[0].id}/system-prompt` });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      requestId: requests[0].id,
+      model: null,
+      systemBlockCount: 1,
+      suspectedSkillCount: 1,
+      toolCount: 2,
+      suspectedSkills: [
+        {
+          name: "browser:control-in-app-browser",
+          description: "Control the in-app browser for local web targets."
+        }
+      ],
+      tools: [
+        { name: "Read", descriptionPreview: "Read a file from disk" },
+        { name: "Edit", descriptionPreview: "Edit a file" }
+      ]
+    });
+  });
+
   it("returns capture diagnostics", async () => {
     const response = await app.inject({ method: "GET", url: "/api/diagnostics" });
 
@@ -278,6 +334,7 @@ describe("viewer", () => {
     expect(response.body).toContain("Timeline");
     expect(response.body).toContain("Turn");
     expect(response.body).toContain("Diff");
+    expect(response.body).toContain("System");
     expect(response.body).toContain("Diagnostics");
     expect(response.body).toContain("Agent");
     expect(response.body).toContain("Headers");
@@ -303,5 +360,7 @@ describe("viewer", () => {
     expect(response.body).toContain("renderTurnDetail");
     expect(response.body).toContain("Tool Loop");
     expect(response.body).toContain("renderToolLoops");
+    expect(response.body).toContain("systemPrompt");
+    expect(response.body).toContain("renderSystemPrompt");
   });
 });
