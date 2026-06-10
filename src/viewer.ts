@@ -15,6 +15,7 @@ import { buildTurnExport } from "./turn-export.js";
 import { buildTurnTimeline } from "./turn-timeline.js";
 import { buildTurnReplay } from "./turn-replay.js";
 import type { RequestStore } from "./store.js";
+import type { RequestDetail, TurnAnnotation } from "./types.js";
 
 export interface ViewerOptions {
   claudeHome?: string;
@@ -26,6 +27,12 @@ interface CreateWatchSessionBody {
   projectPath?: string;
   inspectBody?: boolean;
   claudeSessionId?: string | null;
+}
+
+interface SaveTurnAnnotationBody {
+  bookmarked?: boolean;
+  tags?: string[];
+  note?: string;
 }
 
 export function buildViewerServer(store: RequestStore, options: ViewerOptions = {}): FastifyInstance {
@@ -111,6 +118,37 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
     return buildTurnDetail(store.listRequestDetails(detail.sessionId), requestId);
   });
 
+  app.get<{ Params: { id: string } }>("/api/requests/:id/turn-annotation", async (request, reply) => {
+    const requestId = Number(request.params.id);
+    const { detail, turn } = getRequestTurn(store, requestId);
+
+    if (!detail || !turn) {
+      return reply.code(404).send({ error: "Request turn not found" });
+    }
+
+    return store.getTurnAnnotation(detail.sessionId, turn.key) ?? defaultTurnAnnotation(detail.sessionId, turn.key);
+  });
+
+  app.put<{ Params: { id: string }; Body: SaveTurnAnnotationBody }>(
+    "/api/requests/:id/turn-annotation",
+    async (request, reply) => {
+      const requestId = Number(request.params.id);
+      const { detail, turn } = getRequestTurn(store, requestId);
+
+      if (!detail || !turn) {
+        return reply.code(404).send({ error: "Request turn not found" });
+      }
+
+      return store.saveTurnAnnotation({
+        sessionId: detail.sessionId,
+        turnKey: turn.key,
+        bookmarked: Boolean(request.body?.bookmarked),
+        tags: Array.isArray(request.body?.tags) ? request.body.tags : [],
+        note: typeof request.body?.note === "string" ? request.body.note : ""
+      });
+    }
+  );
+
   app.get<{ Params: { id: string }; Querystring: { baselineRequestId?: string } }>(
     "/api/requests/:id/turn-compare",
     async (request, reply) => {
@@ -190,4 +228,26 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
   });
 
   return app;
+}
+
+function getRequestTurn(store: RequestStore, requestId: number): { detail: RequestDetail | undefined; turn: ReturnType<typeof buildTurnDetail> | null } {
+  const detail = Number.isFinite(requestId) ? store.getRequestDetail(requestId) : undefined;
+  if (!detail) {
+    return { detail: undefined, turn: null };
+  }
+  return {
+    detail,
+    turn: buildTurnDetail(store.listRequestDetails(detail.sessionId), requestId)
+  };
+}
+
+function defaultTurnAnnotation(sessionId: string, turnKey: string): TurnAnnotation {
+  return {
+    sessionId,
+    turnKey,
+    bookmarked: false,
+    tags: [],
+    note: "",
+    updatedAt: null
+  };
 }

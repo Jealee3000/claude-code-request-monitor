@@ -124,6 +124,7 @@ The browser UI shows:
 - Agent Insight turn summaries
 - Turn Compare for context, tools, skills, and final response differences
 - Markdown export for selected turn learning notes
+- Turn bookmarks, tags, and notes for marking useful learning examples
 - Session-level agent search by prompt, response, tool, tool input, and suspected skill
 - Auto-refreshing request list with a manual Refresh button
 - Capture diagnostics with per-session routing, inspect-body, and no-request hints

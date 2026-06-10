@@ -9,8 +9,10 @@ import type {
   PayloadRecord,
   RequestDetail,
   RequestRecord,
+  SaveTurnAnnotationInput,
   SessionRequestStats,
-  SessionRecord
+  SessionRecord,
+  TurnAnnotation
 } from "./types.js";
 
 interface SessionRow {
@@ -45,6 +47,15 @@ interface PayloadRow {
   request_body_json: string | null;
   response_headers_json: string | null;
   response_body_json: string | null;
+}
+
+interface TurnAnnotationRow {
+  session_id: string;
+  turn_key: string;
+  bookmarked: 0 | 1;
+  tags_json: string;
+  note: string;
+  updated_at: string;
 }
 
 interface SessionRequestStatsRow {
@@ -104,6 +115,17 @@ export class RequestStore {
         response_headers_json TEXT,
         response_body_json TEXT,
         FOREIGN KEY (request_id) REFERENCES requests(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS turn_annotations (
+        session_id TEXT NOT NULL,
+        turn_key TEXT NOT NULL,
+        bookmarked INTEGER NOT NULL DEFAULT 0,
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        note TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (session_id, turn_key),
+        FOREIGN KEY (session_id) REFERENCES sessions(id)
       );
     `);
     this.addColumnIfMissing("sessions", "watch_token", "TEXT");
@@ -186,6 +208,7 @@ export class RequestStore {
       this.db
         .prepare("DELETE FROM payloads WHERE request_id IN (SELECT id FROM requests WHERE session_id = ?)")
         .run(id);
+      this.db.prepare("DELETE FROM turn_annotations WHERE session_id = ?").run(id);
       this.db.prepare("DELETE FROM requests WHERE session_id = ?").run(id);
       this.db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
     });
@@ -380,6 +403,56 @@ export class RequestStore {
     };
   }
 
+  getTurnAnnotation(sessionId: string, turnKey: string): TurnAnnotation | undefined {
+    const row = this.db
+      .prepare("SELECT * FROM turn_annotations WHERE session_id = ? AND turn_key = ?")
+      .get(sessionId, turnKey) as TurnAnnotationRow | undefined;
+
+    return row ? mapTurnAnnotation(row) : undefined;
+  }
+
+  saveTurnAnnotation(input: SaveTurnAnnotationInput): TurnAnnotation {
+    const updatedAt = new Date().toISOString();
+    const tags = normalizeTags(input.tags);
+    this.db
+      .prepare(
+        `INSERT INTO turn_annotations (
+          session_id,
+          turn_key,
+          bookmarked,
+          tags_json,
+          note,
+          updated_at
+        ) VALUES (
+          @sessionId,
+          @turnKey,
+          @bookmarked,
+          @tagsJson,
+          @note,
+          @updatedAt
+        )
+        ON CONFLICT(session_id, turn_key) DO UPDATE SET
+          bookmarked = excluded.bookmarked,
+          tags_json = excluded.tags_json,
+          note = excluded.note,
+          updated_at = excluded.updated_at`
+      )
+      .run({
+        sessionId: input.sessionId,
+        turnKey: input.turnKey,
+        bookmarked: input.bookmarked ? 1 : 0,
+        tagsJson: JSON.stringify(tags),
+        note: input.note,
+        updatedAt
+      });
+
+    const annotation = this.getTurnAnnotation(input.sessionId, input.turnKey);
+    if (!annotation) {
+      throw new Error(`Failed to save turn annotation ${input.sessionId}/${input.turnKey}`);
+    }
+    return annotation;
+  }
+
   close(): void {
     this.db.close();
   }
@@ -452,6 +525,40 @@ function mapPayload(row: PayloadRow): PayloadRecord {
     responseHeadersJson: row.response_headers_json,
     responseBodyJson: row.response_body_json
   };
+}
+
+function mapTurnAnnotation(row: TurnAnnotationRow): TurnAnnotation {
+  return {
+    sessionId: row.session_id,
+    turnKey: row.turn_key,
+    bookmarked: row.bookmarked === 1,
+    tags: parseTags(row.tags_json),
+    note: row.note,
+    updatedAt: row.updated_at
+  };
+}
+
+function normalizeTags(tags: string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const tag of tags) {
+    const value = String(tag).trim();
+    if (!value || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    normalized.push(value);
+  }
+  return normalized;
+}
+
+function parseTags(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? normalizeTags(parsed.map(String)) : [];
+  } catch {
+    return [];
+  }
 }
 
 function stripDetail(detail: RequestDetail): RequestRecord {

@@ -274,6 +274,37 @@ describe("viewer", () => {
     });
   });
 
+  it("saves and returns turn annotations for a selected request", async () => {
+    const requests = store.listRequests("session-a");
+    const save = await app.inject({
+      method: "PUT",
+      url: `/api/requests/${requests[0].id}/turn-annotation`,
+      payload: {
+        bookmarked: true,
+        tags: ["context", "skill"],
+        note: "Useful context assembly example."
+      }
+    });
+
+    expect(save.statusCode).toBe(200);
+    expect(save.json()).toMatchObject({
+      sessionId: "session-a",
+      turnKey: "user:next question",
+      bookmarked: true,
+      tags: ["context", "skill"],
+      note: "Useful context assembly example."
+    });
+
+    const get = await app.inject({ method: "GET", url: `/api/requests/${requests[0].id}/turn-annotation` });
+
+    expect(get.statusCode).toBe(200);
+    expect(get.json()).toMatchObject({
+      bookmarked: true,
+      tags: ["context", "skill"],
+      note: "Useful context assembly example."
+    });
+  });
+
   it("returns turn compare for a request", async () => {
     const requests = store.listRequests("session-a");
     const response = await app.inject({ method: "GET", url: `/api/requests/${requests[0].id}/turn-compare` });
@@ -524,6 +555,11 @@ describe("viewer", () => {
     expect(response.body).toContain("renderResponsePreview");
     expect(response.body).toContain("turnDetail");
     expect(response.body).toContain("renderTurnDetail");
+    expect(response.body).toContain("turnAnnotation");
+    expect(response.body).toContain("saveTurnAnnotation");
+    expect(response.body).toContain("Bookmark");
+    expect(response.body).toContain("Tags");
+    expect(response.body).toContain("Notes");
     expect(response.body).toContain("Tool Loop");
     expect(response.body).toContain("renderToolLoops");
     expect(response.body).toContain("systemPrompt");

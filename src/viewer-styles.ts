@@ -171,6 +171,49 @@ export const VIEWER_STYLES = String.raw`    :root {
       font: inherit;
       font-size: 13px;
     }
+    textarea {
+      width: 100%;
+      min-height: 88px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .annotation-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 4px 0 10px;
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .annotation-row input[type="checkbox"] {
+      width: auto;
+      height: auto;
+      margin: 0;
+    }
+    .annotation-field {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .annotation-field input, .annotation-field textarea {
+      margin-top: 5px;
+      color: var(--text);
+      font-weight: 400;
+    }
+    .annotation-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
     .tabs {
       position: sticky;
       top: 0;

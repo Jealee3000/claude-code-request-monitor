@@ -12,6 +12,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       contextDiff: null,
       responsePreview: null,
       turnDetail: null,
+      turnAnnotation: null,
       turnCompare: null,
       turnExport: null,
       systemPrompt: null,
@@ -63,6 +64,11 @@ export function renderViewerClientScript(repoRoot: string): string {
           target.textContent = error.message;
         });
       }
+      if (target instanceof HTMLElement && target.classList.contains('save-turn-annotation')) {
+        saveTurnAnnotation(target).catch((error) => {
+          target.textContent = error.message;
+        });
+      }
     });
     document.querySelectorAll('.tab').forEach((button) => {
       button.addEventListener('click', () => setDetailTab(button.dataset.tab));
@@ -102,6 +108,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.contextDiff = null;
       state.responsePreview = null;
       state.turnDetail = null;
+      state.turnAnnotation = null;
       state.turnCompare = null;
       state.turnExport = null;
       state.systemPrompt = null;
@@ -132,6 +139,7 @@ export function renderViewerClientScript(repoRoot: string): string {
           state.contextDiff = null;
           state.responsePreview = null;
           state.turnDetail = null;
+          state.turnAnnotation = null;
           state.turnCompare = null;
           state.turnExport = null;
           state.systemPrompt = null;
@@ -198,11 +206,12 @@ export function renderViewerClientScript(repoRoot: string): string {
     async function selectRequest(id, nextTab) {
       state.selectedRequest = id;
       const encodedId = encodeURIComponent(id);
-      const [detail, contextDiff, responsePreview, turnDetail, turnCompare, turnExport, systemPrompt, turnReplay, agentInsight] = await Promise.all([
+      const [detail, contextDiff, responsePreview, turnDetail, turnAnnotation, turnCompare, turnExport, systemPrompt, turnReplay, agentInsight] = await Promise.all([
         fetchJson('/api/requests/' + encodedId),
         fetchJson('/api/requests/' + encodedId + '/context-diff'),
         fetchJson('/api/requests/' + encodedId + '/response-preview'),
         fetchJson('/api/requests/' + encodedId + '/turn-detail'),
+        fetchJson('/api/requests/' + encodedId + '/turn-annotation'),
         fetchJson('/api/requests/' + encodedId + '/turn-compare'),
         fetchJson('/api/requests/' + encodedId + '/turn-export'),
         fetchJson('/api/requests/' + encodedId + '/system-prompt'),
@@ -213,6 +222,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.contextDiff = contextDiff;
       state.responsePreview = responsePreview;
       state.turnDetail = turnDetail;
+      state.turnAnnotation = turnAnnotation;
       state.turnCompare = turnCompare;
       state.turnExport = turnExport;
       state.systemPrompt = systemPrompt;
@@ -243,6 +253,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.contextDiff = null;
       state.responsePreview = null;
       state.turnDetail = null;
+      state.turnAnnotation = null;
       state.turnCompare = null;
       state.turnExport = null;
       state.systemPrompt = null;
@@ -291,6 +302,34 @@ export function renderViewerClientScript(repoRoot: string): string {
       if (state.sessions[0] && !state.selectedSession) {
         await selectSession(state.sessions[0].id);
       }
+    }
+
+    async function saveTurnAnnotation(button) {
+      if (!state.selectedRequest) return;
+      const annotation = await fetchJson('/api/requests/' + encodeURIComponent(state.selectedRequest) + '/turn-annotation', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          bookmarked: Boolean(document.getElementById('turn-bookmark')?.checked),
+          tags: parseTagInput(document.getElementById('turn-tags')?.value || ''),
+          note: document.getElementById('turn-note')?.value || ''
+        })
+      });
+      state.turnAnnotation = annotation;
+      if (button) button.textContent = 'Saved';
+      renderDetail();
+    }
+
+    function parseTagInput(value) {
+      const seen = new Set();
+      const tags = [];
+      String(value).split(',').forEach((tag) => {
+        const normalized = tag.trim();
+        if (!normalized || seen.has(normalized)) return;
+        seen.add(normalized);
+        tags.push(normalized);
+      });
+      return tags;
     }
 
     function renderClaudeSessions() {
@@ -653,6 +692,7 @@ export function renderViewerClientScript(repoRoot: string): string {
         metric('Last request', turn.lastRequestAt) +
         metric('Tool uses', turn.toolUses.length) +
         '</div>' +
+        '<div class="panel"><div class="panel-title">Turn Notes</div>' + renderTurnAnnotation() + '</div>' +
         '<div class="panel"><div class="panel-title">Latest user text</div><pre class="raw">' +
         escapeHtml(turn.latestUserText || 'none') +
         '</pre></div>' +
@@ -662,6 +702,23 @@ export function renderViewerClientScript(repoRoot: string): string {
         '<div class="panel"><div class="panel-title">Tool Loop</div>' + renderToolLoops(turn.toolLoops) + '</div>' +
         '<div class="panel"><div class="panel-title">Turn tool uses</div>' + renderTurnToolUses(turn.toolUses) + '</div>' +
         '<div class="panel"><div class="panel-title">Request steps</div>' + renderTurnSteps(turn.steps) + '</div>';
+    }
+
+    function renderTurnAnnotation() {
+      const annotation = state.turnAnnotation || { bookmarked: false, tags: [], note: '', updatedAt: null };
+      return '<label class="annotation-row">' +
+        '<input id="turn-bookmark" type="checkbox" ' + (annotation.bookmarked ? 'checked' : '') + '> Bookmark' +
+        '</label>' +
+        '<label class="annotation-field"><span>Tags</span>' +
+        '<input id="turn-tags" type="text" value="' + escapeHtml((annotation.tags || []).join(', ')) + '" placeholder="context, skill, tool-loop">' +
+        '</label>' +
+        '<label class="annotation-field"><span>Notes</span>' +
+        '<textarea id="turn-note" placeholder="What is worth revisiting in this agent turn?">' + escapeHtml(annotation.note || '') + '</textarea>' +
+        '</label>' +
+        '<div class="annotation-actions">' +
+        '<button class="small save-turn-annotation" type="button">Save</button>' +
+        (annotation.updatedAt ? '<span class="secondary">Updated ' + escapeHtml(annotation.updatedAt) + '</span>' : '') +
+        '</div>';
     }
 
     function renderToolLoops(toolLoops) {

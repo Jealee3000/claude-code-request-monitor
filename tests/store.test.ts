@@ -208,6 +208,64 @@ describe("RequestStore", () => {
     });
   });
 
+  it("saves and loads turn annotations", () => {
+    store.createSession({
+      id: "session-a",
+      projectPath: "D:\\code\\a",
+      inspectBody: true
+    });
+
+    const saved = store.saveTurnAnnotation({
+      sessionId: "session-a",
+      turnKey: "user:hello",
+      bookmarked: true,
+      tags: ["context", "tool-loop"],
+      note: "Good example of context growth."
+    });
+
+    expect(saved).toMatchObject({
+      sessionId: "session-a",
+      turnKey: "user:hello",
+      bookmarked: true,
+      tags: ["context", "tool-loop"],
+      note: "Good example of context growth.",
+      updatedAt: expect.any(String)
+    });
+    expect(store.getTurnAnnotation("session-a", "user:hello")).toEqual(saved);
+
+    const updated = store.saveTurnAnnotation({
+      sessionId: "session-a",
+      turnKey: "user:hello",
+      bookmarked: false,
+      tags: ["skill"],
+      note: ""
+    });
+    expect(updated).toMatchObject({
+      bookmarked: false,
+      tags: ["skill"],
+      note: ""
+    });
+  });
+
+  it("deletes turn annotations with their session", () => {
+    store.createSession({
+      id: "session-a",
+      projectPath: "D:\\code\\a",
+      inspectBody: true
+    });
+    store.saveTurnAnnotation({
+      sessionId: "session-a",
+      turnKey: "user:hello",
+      bookmarked: true,
+      tags: ["keep"],
+      note: "delete with session"
+    });
+
+    store.deleteSession("session-a");
+
+    expect(store.getTurnAnnotation("session-a", "user:hello")).toBeUndefined();
+  });
+
   it("returns undefined for missing request detail", () => {
     expect(store.getRequestDetail(404)).toBeUndefined();
   });

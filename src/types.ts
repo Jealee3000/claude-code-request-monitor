@@ -92,3 +92,20 @@ export interface DeleteSessionResult {
   requestCount: number;
   payloadCount: number;
 }
+
+export interface TurnAnnotation {
+  sessionId: string;
+  turnKey: string;
+  bookmarked: boolean;
+  tags: string[];
+  note: string;
+  updatedAt: string | null;
+}
+
+export interface SaveTurnAnnotationInput {
+  sessionId: string;
+  turnKey: string;
+  bookmarked: boolean;
+  tags: string[];
+  note: string;
+}
