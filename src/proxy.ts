@@ -265,7 +265,7 @@ async function handleHttpProxyRequest(
   });
 }
 
-function handleConnectRequest(
+export function handleConnectRequest(
   config: MonitorConfig,
   store: RequestStore,
   request: http.IncomingMessage,
@@ -298,8 +298,17 @@ function handleConnectRequest(
     });
   });
 
+  clientSocket.on("error", () => {
+    upstreamSocket.destroy();
+  });
+  clientSocket.on("close", () => {
+    upstreamSocket.destroy();
+  });
+
   upstreamSocket.on("error", (error) => {
-    clientSocket.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+    if (!clientSocket.destroyed) {
+      clientSocket.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+    }
     store.logRequest({
       sessionId,
       startedAt: new Date(started).toISOString(),
