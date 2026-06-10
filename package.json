@@ -8,6 +8,8 @@
     "test": "vitest run",
     "dev": "tsx src/main.ts",
     "watch": "tsx src/cli.ts",
+    "watch:server": "tsx src/cli.ts server --inspect-body",
+    "watch:run": "tsx src/cli.ts run",
     "start": "node dist/src/main.js"
   },
   "dependencies": {

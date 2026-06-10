@@ -29,32 +29,32 @@ http://127.0.0.1:43110
 Start one long-lived watcher service:
 
 ```powershell
-npm.cmd run watch -- server --inspect-body
+npm.cmd run watch:server
 ```
 
 In Git Bash:
 
 ```bash
-npm run watch -- server --inspect-body
+npm run watch:server
 ```
 
 Then start Claude from any project directory through the running watcher:
 
 ```powershell
-npm.cmd run watch -- run --project D:\code\sso-hub --resume 464c8718-4dd5-462d-9523-20f7b51c3d25
+npm.cmd run watch:run -- --project D:\code\sso-hub --resume 464c8718-4dd5-462d-9523-20f7b51c3d25
 ```
 
 In Git Bash:
 
 ```bash
-npm run watch -- run --project /d/code/sso-hub --resume 464c8718-4dd5-462d-9523-20f7b51c3d25
+npm run watch:run -- --project /d/code/sso-hub --resume 464c8718-4dd5-462d-9523-20f7b51c3d25
 ```
 
 To watch two Claude sessions together, keep the service running and launch two terminals:
 
 ```powershell
-npm.cmd run watch -- run --project D:\code\sso-hub --resume 464c8718-4dd5-462d-9523-20f7b51c3d25
-npm.cmd run watch -- run --project D:\code\other-project --resume 26320e7d-3983-4d1e-b554-750960e381a4
+npm.cmd run watch:run -- --project D:\code\sso-hub --resume 464c8718-4dd5-462d-9523-20f7b51c3d25
+npm.cmd run watch:run -- --project D:\code\other-project --resume 26320e7d-3983-4d1e-b554-750960e381a4
 ```
 
 Each `run` command registers a separate Claude Watch session and tags its requests with a local proxy token. The viewer shows all captured watch sessions in one page.
@@ -168,7 +168,7 @@ Use it from PowerShell:
 Or with the Node CLI:
 
 ```powershell
-npm.cmd run watch -- server --inspect-body --redaction-config .\redaction.json
+npm.cmd run watch:server -- --redaction-config .\redaction.json
 ```
 
 Inspect mode can still capture sensitive prompt content before redaction rules know about it. Use it only in local projects where this is acceptable.
@@ -195,7 +195,7 @@ You can also let the wrapper stop old listeners on the viewer/proxy ports:
 npm.cmd run build
 npm.cmd test
 npm.cmd run dev -- --session-id manual-test
-npm.cmd run watch -- server --inspect-body
+npm.cmd run watch:server
 ```
 
 Viewer code is split by responsibility:

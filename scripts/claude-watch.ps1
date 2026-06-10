@@ -39,8 +39,8 @@ Usage:
   .\scripts\claude-watch.ps1 -NoClaude
 
 Recommended multi-session flow:
-  npm.cmd run watch -- server --inspect-body
-  npm.cmd run watch -- run --project D:\code\some-project --resume 464c8718-4dd5-462d-9523-20f7b51c3d25
+  npm.cmd run watch:server
+  npm.cmd run watch:run -- --project D:\code\some-project --resume 464c8718-4dd5-462d-9523-20f7b51c3d25
 
 Options:
   -InspectBody   Enable local HTTPS MITM capture and redacted JSON body logging.
