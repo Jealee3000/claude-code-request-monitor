@@ -411,6 +411,14 @@ export class RequestStore {
     return row ? mapTurnAnnotation(row) : undefined;
   }
 
+  listTurnAnnotations(sessionId: string): TurnAnnotation[] {
+    const rows = this.db
+      .prepare("SELECT * FROM turn_annotations WHERE session_id = ? ORDER BY updated_at ASC, turn_key ASC")
+      .all(sessionId) as TurnAnnotationRow[];
+
+    return rows.map(mapTurnAnnotation);
+  }
+
   saveTurnAnnotation(input: SaveTurnAnnotationInput): TurnAnnotation {
     const updatedAt = new Date().toISOString();
     const tags = normalizeTags(input.tags);

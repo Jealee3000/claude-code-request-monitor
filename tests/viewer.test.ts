@@ -305,6 +305,30 @@ describe("viewer", () => {
     });
   });
 
+  it("returns a session-level markdown export", async () => {
+    const requests = store.listRequests("session-a");
+    await app.inject({
+      method: "PUT",
+      url: `/api/requests/${requests[0].id}/turn-annotation`,
+      payload: {
+        bookmarked: true,
+        tags: ["context"],
+        note: "Session export should include this note."
+      }
+    });
+
+    const response = await app.inject({ method: "GET", url: "/api/sessions/session-a/export" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      sessionId: "session-a",
+      filename: expect.stringMatching(/^claude-watch-session-session-a-.*\.md$/),
+      markdown: expect.stringContaining("# Claude Watch Session Note")
+    });
+    expect(response.json().markdown).toContain("next question");
+    expect(response.json().markdown).toContain("Session export should include this note.");
+  });
+
   it("returns turn compare for a request", async () => {
     const requests = store.listRequests("session-a");
     const response = await app.inject({ method: "GET", url: `/api/requests/${requests[0].id}/turn-compare` });
@@ -560,6 +584,9 @@ describe("viewer", () => {
     expect(response.body).toContain("Bookmark");
     expect(response.body).toContain("Tags");
     expect(response.body).toContain("Notes");
+    expect(response.body).toContain("sessionExport");
+    expect(response.body).toContain("copySessionMarkdownExport");
+    expect(response.body).toContain("Copy Session Markdown");
     expect(response.body).toContain("Tool Loop");
     expect(response.body).toContain("renderToolLoops");
     expect(response.body).toContain("systemPrompt");

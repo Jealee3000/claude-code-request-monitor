@@ -3,6 +3,7 @@ export function renderViewerClientScript(repoRoot: string): string {
   return `    const repoRoot = ${initialRepoRoot};
     const state = {
       sessions: [],
+      sessionExport: null,
       claudeSessions: [],
       diagnostics: null,
       requests: [],
@@ -59,6 +60,11 @@ export function renderViewerClientScript(repoRoot: string): string {
           target.textContent = error.message;
         });
       }
+      if (target instanceof HTMLElement && target.classList.contains('copy-session-export')) {
+        copySessionMarkdownExport(target.dataset.sessionId || '', target).catch((error) => {
+          target.textContent = error.message;
+        });
+      }
       if (target instanceof HTMLElement && target.classList.contains('delete-session')) {
         confirmDeleteSession(target.dataset.sessionId || '').catch((error) => {
           target.textContent = error.message;
@@ -102,6 +108,7 @@ export function renderViewerClientScript(repoRoot: string): string {
 
     async function selectSession(id) {
       state.selectedSession = id;
+      state.sessionExport = null;
       state.selectedRequest = null;
       state.requestSearchResults = null;
       state.detail = null;
@@ -274,6 +281,7 @@ export function renderViewerClientScript(repoRoot: string): string {
           (session.claudeSessionId ? ' - Claude ' + session.claudeSessionId : '')) + '</div>' +
         '<div class="session-actions">' +
           '<button class="small" type="button" onclick="selectSession(\\'' + escapeAttr(session.id) + '\\')">Select</button>' +
+          '<button class="small copy-session-export" type="button" data-session-id="' + escapeHtml(session.id) + '">Copy Session Markdown</button>' +
           '<button class="small delete-session" type="button" data-session-id="' + escapeHtml(session.id) + '">Delete</button>' +
         '</div>' +
       '</div>').join('');
@@ -291,6 +299,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.sessions = await fetchJson('/api/sessions');
       if (state.selectedSession === sessionId) {
         state.selectedSession = null;
+        state.sessionExport = null;
         state.requests = [];
         state.timeline = [];
         clearSelectedState();
@@ -302,6 +311,14 @@ export function renderViewerClientScript(repoRoot: string): string {
       if (state.sessions[0] && !state.selectedSession) {
         await selectSession(state.sessions[0].id);
       }
+    }
+
+    async function copySessionMarkdownExport(sessionId, button) {
+      if (!sessionId) return;
+      const exportNote = await fetchJson('/api/sessions/' + encodeURIComponent(sessionId) + '/export');
+      state.sessionExport = exportNote;
+      await navigator.clipboard.writeText(exportNote.markdown);
+      if (button) button.textContent = 'Copied Session Markdown';
     }
 
     async function saveTurnAnnotation(button) {

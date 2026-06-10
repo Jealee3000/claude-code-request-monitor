@@ -266,6 +266,45 @@ describe("RequestStore", () => {
     expect(store.getTurnAnnotation("session-a", "user:hello")).toBeUndefined();
   });
 
+  it("lists turn annotations for a session", () => {
+    store.createSession({
+      id: "session-a",
+      projectPath: "D:\\code\\a",
+      inspectBody: true
+    });
+    store.createSession({
+      id: "session-b",
+      projectPath: "D:\\code\\b",
+      inspectBody: true
+    });
+    store.saveTurnAnnotation({
+      sessionId: "session-a",
+      turnKey: "user:first",
+      bookmarked: true,
+      tags: ["context"],
+      note: "first"
+    });
+    store.saveTurnAnnotation({
+      sessionId: "session-a",
+      turnKey: "user:second",
+      bookmarked: false,
+      tags: ["skill"],
+      note: "second"
+    });
+    store.saveTurnAnnotation({
+      sessionId: "session-b",
+      turnKey: "user:other",
+      bookmarked: true,
+      tags: [],
+      note: "other"
+    });
+
+    expect(store.listTurnAnnotations("session-a")).toMatchObject([
+      { sessionId: "session-a", turnKey: "user:first", tags: ["context"], note: "first" },
+      { sessionId: "session-a", turnKey: "user:second", tags: ["skill"], note: "second" }
+    ]);
+  });
+
   it("returns undefined for missing request detail", () => {
     expect(store.getRequestDetail(404)).toBeUndefined();
   });

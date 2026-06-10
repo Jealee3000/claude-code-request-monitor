@@ -9,6 +9,7 @@ import { buildAgentInsight } from "./agent-insight.js";
 import { parseResponsePreviewFromDetail } from "./response-stream.js";
 import { buildRequestSearch } from "./request-search.js";
 import { buildSystemPromptPreview } from "./system-prompt.js";
+import { buildSessionExport } from "./session-export.js";
 import { buildTurnDetail } from "./turn-detail.js";
 import { buildTurnCompare } from "./turn-compare.js";
 import { buildTurnExport } from "./turn-export.js";
@@ -73,6 +74,19 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
 
   app.get<{ Params: { id: string } }>("/api/sessions/:id/turns", async (request) => {
     return buildTurnTimeline(store.listRequestDetails(request.params.id));
+  });
+
+  app.get<{ Params: { id: string } }>("/api/sessions/:id/export", async (request, reply) => {
+    const session = store.listSessions().find((item) => item.id === request.params.id);
+    if (!session) {
+      return reply.code(404).send({ error: "Session not found" });
+    }
+
+    return buildSessionExport(
+      session,
+      store.listRequestDetails(session.id),
+      store.listTurnAnnotations(session.id)
+    );
   });
 
   app.get<{ Params: { id: string }; Querystring: { q?: string; tool?: string; skill?: string; limit?: string } }>(
