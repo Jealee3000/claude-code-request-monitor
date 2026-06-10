@@ -313,6 +313,36 @@ function renderHtml(repoRoot: string): string {
     }
     button.small:hover { background: var(--subtle); }
     .session-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .traffic-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .mode-switch {
+      display: flex;
+      gap: 2px;
+      padding: 2px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--subtle);
+    }
+    .mode-button {
+      min-height: 24px;
+      border: 0;
+      border-radius: 5px;
+      padding: 3px 7px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .mode-button.active {
+      background: var(--panel);
+      color: var(--text);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+    }
     .request-search {
       position: sticky;
       top: 41px;
@@ -454,8 +484,14 @@ function renderHtml(repoRoot: string): string {
     </section>
     <section>
       <div class="section-header">
-        <span>Requests</span>
-        <button id="refresh-requests" class="small" type="button">Refresh</button>
+        <span>Traffic</span>
+        <div class="traffic-controls">
+          <div class="mode-switch" role="tablist" aria-label="Traffic view">
+            <button class="mode-button active" data-request-mode="turns" type="button">Turns</button>
+            <button class="mode-button" data-request-mode="requests" type="button">Requests</button>
+          </div>
+          <button id="refresh-requests" class="small" type="button">Refresh</button>
+        </div>
       </div>
       <div class="request-search">
         <input id="request-search" placeholder="Agent search" autocomplete="off">
@@ -513,6 +549,7 @@ function renderHtml(repoRoot: string): string {
       selectedRequest: null,
       tab: 'overview',
       leftTab: 'monitor',
+      requestMode: 'turns',
       refreshingRequests: false
     };
     const sessionsEl = document.getElementById('sessions');
@@ -533,6 +570,9 @@ function renderHtml(repoRoot: string): string {
     document.getElementById('refresh-requests').addEventListener('click', () => refreshRequests().catch(showRequestError));
     document.querySelectorAll('[data-left-tab]').forEach((button) => {
       button.addEventListener('click', () => setLeftTab(button.dataset.leftTab));
+    });
+    document.querySelectorAll('[data-request-mode]').forEach((button) => {
+      button.addEventListener('click', () => setRequestMode(button.dataset.requestMode));
     });
     document.addEventListener('click', (event) => {
       const target = event.target;
@@ -591,7 +631,6 @@ function renderHtml(repoRoot: string): string {
       state.turnReplay = null;
       state.agentInsight = null;
       await refreshRequests({ resetSelection: true });
-      await loadTimeline();
       renderSessions();
       renderDetail();
     }
@@ -607,6 +646,7 @@ function renderHtml(repoRoot: string): string {
         } else {
           state.requestSearchResults = null;
         }
+        await loadTimeline();
         if (options.resetSelection) {
           state.selectedRequest = null;
         } else if (previousRequest && !state.requests.some((request) => request.id === previousRequest)) {
@@ -623,7 +663,6 @@ function renderHtml(repoRoot: string): string {
           renderDetail();
         }
         renderRequests();
-        await loadTimeline();
       } finally {
         state.refreshingRequests = false;
       }
@@ -665,6 +704,18 @@ function renderHtml(repoRoot: string): string {
         requestToolFilterEl.value.trim() ||
         requestSkillFilterEl.value.trim()
       );
+    }
+
+    function setRequestMode(mode) {
+      state.requestMode = mode === 'requests' ? 'requests' : 'turns';
+      syncRequestMode();
+      renderRequests();
+    }
+
+    function syncRequestMode() {
+      document.querySelectorAll('[data-request-mode]').forEach((button) => {
+        button.classList.toggle('active', button.dataset.requestMode === state.requestMode);
+      });
     }
 
     async function selectRequest(id, nextTab) {
@@ -751,6 +802,38 @@ function renderHtml(repoRoot: string): string {
         renderSearchResults();
         return;
       }
+      if (state.requestMode === 'requests') {
+        renderRawRequests();
+        return;
+      }
+      renderTurnList();
+    }
+
+    function renderTurnList() {
+      if (!state.selectedSession) {
+        requestsEl.className = 'empty';
+        requestsEl.textContent = 'Select a session';
+        return;
+      }
+      if (!state.timeline.length) {
+        requestsEl.className = 'empty';
+        requestsEl.textContent = state.requests.length ? 'No agent turns detected yet' : 'No requests captured yet';
+        return;
+      }
+      requestsEl.className = '';
+      requestsEl.innerHTML = state.timeline.map((turn) => {
+        const requestId = turn.requestIds[turn.requestIds.length - 1];
+        return row({
+          active: turn.requestIds.includes(state.selectedRequest),
+          onclick: 'selectRequest(' + requestId + ', \\'turn\\')',
+          primary: turn.latestUserPreview || 'No user text',
+          secondary: turn.firstRequestAt + ' - ' + turn.requestCount + ' request(s) - tools: ' +
+            (turn.toolNames.join(', ') || 'none') + ' - context: ' + turn.maxContextChars
+        });
+      }).join('');
+    }
+
+    function renderRawRequests() {
       if (!state.requests.length) {
         requestsEl.className = 'empty';
         requestsEl.textContent = state.selectedSession ? 'No requests captured yet' : 'Select a session';

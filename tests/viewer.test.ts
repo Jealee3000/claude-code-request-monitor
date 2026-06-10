@@ -462,6 +462,13 @@ describe("viewer", () => {
     expect(response.body).toContain('data-left-tab="claude"');
     expect(response.body).toContain("setLeftTab");
     expect(response.body).toContain("Refresh");
+    expect(response.body).toContain("Traffic");
+    expect(response.body).toContain('data-request-mode="turns"');
+    expect(response.body).toContain('data-request-mode="requests"');
+    expect(response.body).toContain("requestMode: 'turns'");
+    expect(response.body).toContain("setRequestMode");
+    expect(response.body).toContain("renderTurnList");
+    expect(response.body).toContain("renderRawRequests");
     expect(response.body).toContain("Agent search");
     expect(response.body).toContain("requestSearchResults");
     expect(response.body).toContain("searchRequests");

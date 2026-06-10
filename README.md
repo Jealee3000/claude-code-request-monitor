@@ -119,6 +119,7 @@ The browser UI shows:
 
 - Sessions
 - Local Claude sessions with copyable resume commands
+- Turn-first traffic navigation with request detail drill-down
 - Request timeline
 - Agent Insight turn summaries
 - Turn Compare for context, tools, skills, and final response differences
