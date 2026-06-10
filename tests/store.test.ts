@@ -165,6 +165,49 @@ describe("RequestStore", () => {
     ]);
   });
 
+  it("deletes a session with its requests and payloads", () => {
+    store.createSession({
+      id: "session-a",
+      projectPath: "D:\\code\\a",
+      inspectBody: true
+    });
+    store.createSession({
+      id: "session-b",
+      projectPath: "D:\\code\\b",
+      inspectBody: true
+    });
+    const deletedRequest = store.logRequest({
+      sessionId: "session-a",
+      method: "POST",
+      host: "api.anthropic.com",
+      path: "/v1/messages",
+      requestBody: { messages: [{ role: "user", content: "delete me" }] }
+    });
+    store.logRequest({
+      sessionId: "session-b",
+      method: "POST",
+      host: "api.anthropic.com",
+      path: "/v1/messages"
+    });
+
+    expect(store.deleteSession("session-a")).toEqual({
+      sessionId: "session-a",
+      deleted: true,
+      requestCount: 1,
+      payloadCount: 1
+    });
+    expect(store.listSessions().map((session) => session.id)).toEqual(["session-b"]);
+    expect(store.listRequests("session-a")).toEqual([]);
+    expect(store.getRequestDetail(deletedRequest.id)).toBeUndefined();
+    expect(store.listRequests("session-b")).toHaveLength(1);
+    expect(store.deleteSession("missing")).toEqual({
+      sessionId: "missing",
+      deleted: false,
+      requestCount: 0,
+      payloadCount: 0
+    });
+  });
+
   it("returns undefined for missing request detail", () => {
     expect(store.getRequestDetail(404)).toBeUndefined();
   });

@@ -85,3 +85,10 @@ export interface SessionRequestStats {
   requestCount: number;
   lastRequestAt: string | null;
 }
+
+export interface DeleteSessionResult {
+  sessionId: string;
+  deleted: boolean;
+  requestCount: number;
+  payloadCount: number;
+}

@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import { redactHeaders, redactJson } from "./redact.js";
 import type {
   CreateSessionInput,
+  DeleteSessionResult,
   LoggedRequestInput,
   PayloadRecord,
   RequestDetail,
@@ -157,6 +158,45 @@ export class RequestStore {
       .all() as SessionRow[];
 
     return rows.map(mapSession);
+  }
+
+  deleteSession(sessionId: string): DeleteSessionResult {
+    const existing = this.getSession(sessionId);
+    if (!existing) {
+      return {
+        sessionId,
+        deleted: false,
+        requestCount: 0,
+        payloadCount: 0
+      };
+    }
+
+    const requestCount = countValue(this.db.prepare("SELECT COUNT(*) AS count FROM requests WHERE session_id = ?").get(sessionId));
+    const payloadCount = countValue(
+      this.db
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM payloads
+           WHERE request_id IN (SELECT id FROM requests WHERE session_id = ?)`
+        )
+        .get(sessionId)
+    );
+
+    const transaction = this.db.transaction((id: string) => {
+      this.db
+        .prepare("DELETE FROM payloads WHERE request_id IN (SELECT id FROM requests WHERE session_id = ?)")
+        .run(id);
+      this.db.prepare("DELETE FROM requests WHERE session_id = ?").run(id);
+      this.db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
+    });
+    transaction(sessionId);
+
+    return {
+      sessionId,
+      deleted: true,
+      requestCount,
+      payloadCount
+    };
   }
 
   logRequest(input: LoggedRequestInput): RequestRecord {
@@ -379,6 +419,10 @@ function mapSession(row: SessionRow): SessionRecord {
     watchToken: row.watch_token,
     claudeSessionId: row.claude_session_id
   };
+}
+
+function countValue(row: unknown): number {
+  return Number((row as { count?: number | bigint } | undefined)?.count ?? 0);
 }
 
 function mapRequest(row: RequestRow): RequestRecord {

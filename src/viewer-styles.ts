@@ -101,6 +101,7 @@ export const VIEWER_STYLES = String.raw`    :root {
       padding: 10px 12px;
       background: transparent;
     }
+    div.row.active { background: #eaf6f4; }
     button.small {
       min-height: 28px;
       border: 1px solid var(--line);

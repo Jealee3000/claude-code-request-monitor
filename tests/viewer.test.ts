@@ -410,6 +410,32 @@ describe("viewer", () => {
     });
   });
 
+  it("deletes sessions and their captured logs", async () => {
+    const response = await app.inject({ method: "DELETE", url: "/api/sessions/session-a" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      sessionId: "session-a",
+      deleted: true,
+      requestCount: 2,
+      payloadCount: 2
+    });
+    expect((await app.inject({ method: "GET", url: "/api/sessions" })).json()).toEqual([]);
+    expect((await app.inject({ method: "GET", url: "/api/sessions/session-a/requests" })).json()).toEqual([]);
+  });
+
+  it("returns a no-op result when deleting a missing session", async () => {
+    const response = await app.inject({ method: "DELETE", url: "/api/sessions/missing" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      sessionId: "missing",
+      deleted: false,
+      requestCount: 0,
+      payloadCount: 0
+    });
+  });
+
   it("creates watch sessions from the local API", async () => {
     const response = await app.inject({
       method: "POST",
@@ -470,6 +496,9 @@ describe("viewer", () => {
     expect(response.body).toContain('data-left-tab="monitor"');
     expect(response.body).toContain('data-left-tab="claude"');
     expect(response.body).toContain("setLeftTab");
+    expect(response.body).toContain("deleteSession");
+    expect(response.body).toContain("confirmDeleteSession");
+    expect(response.body).toContain("Delete");
     expect(response.body).toContain("Refresh");
     expect(response.body).toContain("Traffic");
     expect(response.body).toContain('data-request-mode="turns"');

@@ -58,6 +58,11 @@ export function renderViewerClientScript(repoRoot: string): string {
           target.textContent = error.message;
         });
       }
+      if (target instanceof HTMLElement && target.classList.contains('delete-session')) {
+        confirmDeleteSession(target.dataset.sessionId || '').catch((error) => {
+          target.textContent = error.message;
+        });
+      }
     });
     document.querySelectorAll('.tab').forEach((button) => {
       button.addEventListener('click', () => setDetailTab(button.dataset.tab));
@@ -231,6 +236,20 @@ export function renderViewerClientScript(repoRoot: string): string {
       document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.tab === state.tab));
     }
 
+    function clearSelectedState() {
+      state.selectedRequest = null;
+      state.requestSearchResults = null;
+      state.detail = null;
+      state.contextDiff = null;
+      state.responsePreview = null;
+      state.turnDetail = null;
+      state.turnCompare = null;
+      state.turnExport = null;
+      state.systemPrompt = null;
+      state.turnReplay = null;
+      state.agentInsight = null;
+    }
+
     function renderSessions() {
       if (!state.sessions.length) {
         sessionsEl.className = 'empty';
@@ -238,13 +257,40 @@ export function renderViewerClientScript(repoRoot: string): string {
         return;
       }
       sessionsEl.className = '';
-      sessionsEl.innerHTML = state.sessions.map((session) => row({
-        active: session.id === state.selectedSession,
-        onclick: 'selectSession(\\'' + escapeAttr(session.id) + '\\')',
-        primary: session.id,
-        secondary: session.projectPath + ' - ' + (session.inspectBody ? 'inspect body' : 'metadata') +
-          (session.claudeSessionId ? ' - Claude ' + session.claudeSessionId : '')
-      })).join('');
+      sessionsEl.innerHTML = state.sessions.map((session) => '<div class="row ' + (session.id === state.selectedSession ? 'active' : '') + '">' +
+        '<div class="primary">' + escapeHtml(session.id) + '</div>' +
+        '<div class="secondary">' + escapeHtml(session.projectPath + ' - ' + (session.inspectBody ? 'inspect body' : 'metadata') +
+          (session.claudeSessionId ? ' - Claude ' + session.claudeSessionId : '')) + '</div>' +
+        '<div class="session-actions">' +
+          '<button class="small" type="button" onclick="selectSession(\\'' + escapeAttr(session.id) + '\\')">Select</button>' +
+          '<button class="small delete-session" type="button" data-session-id="' + escapeHtml(session.id) + '">Delete</button>' +
+        '</div>' +
+      '</div>').join('');
+    }
+
+    async function confirmDeleteSession(sessionId) {
+      if (!sessionId) return;
+      const ok = window.confirm('Delete session ' + sessionId + ' and its captured requests?');
+      if (!ok) return;
+      await deleteSession(sessionId);
+    }
+
+    async function deleteSession(sessionId) {
+      await fetchJson('/api/sessions/' + encodeURIComponent(sessionId), { method: 'DELETE' });
+      state.sessions = await fetchJson('/api/sessions');
+      if (state.selectedSession === sessionId) {
+        state.selectedSession = null;
+        state.requests = [];
+        state.timeline = [];
+        clearSelectedState();
+      }
+      renderSessions();
+      renderRequests();
+      renderDetail();
+      await loadDiagnostics();
+      if (state.sessions[0] && !state.selectedSession) {
+        await selectSession(state.sessions[0].id);
+      }
     }
 
     function renderClaudeSessions() {
@@ -977,8 +1023,8 @@ export function renderViewerClientScript(repoRoot: string): string {
       return text.length <= max ? text : text.slice(0, max - 1) + '...';
     }
 
-    async function fetchJson(url) {
-      const response = await fetch(url);
+    async function fetchJson(url, options = {}) {
+      const response = await fetch(url, options);
       if (!response.ok) throw new Error(await response.text());
       return response.json();
     }

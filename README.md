@@ -127,6 +127,7 @@ The browser UI shows:
 - Session-level agent search by prompt, response, tool, tool input, and suspected skill
 - Auto-refreshing request list with a manual Refresh button
 - Capture diagnostics with per-session routing, inspect-body, and no-request hints
+- Session cleanup for deleting captured local logs from the Viewer
 - Request detail
 - Redacted JSON payloads when inspect mode is enabled
 - Search within request detail JSON

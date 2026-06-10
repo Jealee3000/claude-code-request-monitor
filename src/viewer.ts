@@ -37,6 +37,10 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
 
   app.get("/api/sessions", async () => store.listSessions());
 
+  app.delete<{ Params: { id: string } }>("/api/sessions/:id", async (request) => {
+    return store.deleteSession(request.params.id);
+  });
+
   app.get("/api/diagnostics", async () => buildDiagnostics(store.listSessionRequestStats()));
 
   app.post<{ Body: CreateWatchSessionBody }>("/api/watch-sessions", async (request, reply) => {
