@@ -264,6 +264,29 @@ export const VIEWER_STYLES = String.raw`    :root {
       background: var(--panel);
     }
     .panel-title { margin-bottom: 8px; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; }
+    .waterfall-row { padding: 8px 0; border-bottom: 1px solid #edf0f5; }
+    .waterfall-row:last-child { border-bottom: 0; }
+    .waterfall-heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .waterfall-track {
+      width: 100%;
+      height: 10px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--subtle);
+    }
+    .waterfall-bar {
+      height: 100%;
+      border-radius: 999px;
+      background: var(--accent);
+    }
+    .waterfall-row pre.raw { margin-top: 8px; }
     .empty { padding: 16px; color: var(--muted); font-size: 13px; }
     .pill { color: var(--accent); font-size: 12px; font-weight: 700; }
     .flag { display: inline-block; margin: 2px 4px 2px 0; padding: 2px 6px; border-radius: 999px; background: #fff4ed; color: var(--warn); font-size: 12px; }

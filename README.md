@@ -126,6 +126,7 @@ The browser UI shows:
 - Agent Insight turn summaries
 - Turn Compare for context, tools, skills, and final response differences
 - Session Compare for repeated prompts across monitored runs
+- Context Waterfall for system, tools, messages, skills, tool results, user input, and assistant history
 - Markdown export for selected turn learning notes
 - Session-level Markdown export for whole monitored runs
 - Turn bookmarks, tags, and notes for marking useful learning examples

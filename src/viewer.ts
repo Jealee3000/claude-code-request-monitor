@@ -4,6 +4,7 @@ import { renderHtml } from "./viewer-html.js";
 import { createSessionId } from "./config.js";
 import { defaultClaudeHome, listLocalClaudeSessions } from "./claude-sessions.js";
 import { buildContextDiff } from "./context-diff.js";
+import { buildContextWaterfall } from "./context-waterfall.js";
 import { buildDiagnostics } from "./diagnostics.js";
 import { buildAgentInsight } from "./agent-insight.js";
 import { parseResponsePreviewFromDetail } from "./response-stream.js";
@@ -133,6 +134,15 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
       return reply.code(404).send({ error: "Request not found" });
     }
     return buildContextDiff(store.getPreviousRequestDetail(requestId), current);
+  });
+
+  app.get<{ Params: { id: string } }>("/api/requests/:id/context-waterfall", async (request, reply) => {
+    const requestId = Number(request.params.id);
+    const current = Number.isFinite(requestId) ? store.getRequestDetail(requestId) : undefined;
+    if (!current) {
+      return reply.code(404).send({ error: "Request not found" });
+    }
+    return buildContextWaterfall(store.getPreviousRequestDetail(requestId), current);
   });
 
   app.get<{ Params: { id: string } }>("/api/requests/:id/response-preview", async (request, reply) => {

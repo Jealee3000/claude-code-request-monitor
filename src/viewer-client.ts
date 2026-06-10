@@ -12,6 +12,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       timeline: [],
       detail: null,
       contextDiff: null,
+      contextWaterfall: null,
       responsePreview: null,
       turnDetail: null,
       turnAnnotation: null,
@@ -115,6 +116,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.requestSearchResults = null;
       state.detail = null;
       state.contextDiff = null;
+      state.contextWaterfall = null;
       state.responsePreview = null;
       state.turnDetail = null;
       state.turnAnnotation = null;
@@ -147,6 +149,7 @@ export function renderViewerClientScript(repoRoot: string): string {
           state.selectedRequest = null;
           state.detail = null;
           state.contextDiff = null;
+          state.contextWaterfall = null;
           state.responsePreview = null;
           state.turnDetail = null;
           state.turnAnnotation = null;
@@ -216,9 +219,10 @@ export function renderViewerClientScript(repoRoot: string): string {
     async function selectRequest(id, nextTab) {
       state.selectedRequest = id;
       const encodedId = encodeURIComponent(id);
-      const [detail, contextDiff, responsePreview, turnDetail, turnAnnotation, turnCompare, turnExport, systemPrompt, turnReplay, agentInsight] = await Promise.all([
+      const [detail, contextDiff, contextWaterfall, responsePreview, turnDetail, turnAnnotation, turnCompare, turnExport, systemPrompt, turnReplay, agentInsight] = await Promise.all([
         fetchJson('/api/requests/' + encodedId),
         fetchJson('/api/requests/' + encodedId + '/context-diff'),
+        fetchJson('/api/requests/' + encodedId + '/context-waterfall'),
         fetchJson('/api/requests/' + encodedId + '/response-preview'),
         fetchJson('/api/requests/' + encodedId + '/turn-detail'),
         fetchJson('/api/requests/' + encodedId + '/turn-annotation'),
@@ -230,6 +234,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       ]);
       state.detail = detail;
       state.contextDiff = contextDiff;
+      state.contextWaterfall = contextWaterfall;
       state.responsePreview = responsePreview;
       state.turnDetail = turnDetail;
       state.turnAnnotation = turnAnnotation;
@@ -261,6 +266,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.requestSearchResults = null;
       state.detail = null;
       state.contextDiff = null;
+      state.contextWaterfall = null;
       state.responsePreview = null;
       state.turnDetail = null;
       state.turnAnnotation = null;
@@ -539,6 +545,7 @@ export function renderViewerClientScript(repoRoot: string): string {
         timeline: renderTimeline,
         turn: renderTurnDetail,
         diff: renderContextDiff,
+        waterfall: renderContextWaterfall,
         agent: renderAgent,
         system: renderSystemPrompt,
         headers: renderHeaders,
@@ -854,6 +861,44 @@ export function renderViewerClientScript(repoRoot: string): string {
         '</div>' +
         '<div class="panel"><div class="panel-title">Tools added</div>' + renderList(diff.tools.added) + '</div>' +
         '<div class="panel"><div class="panel-title">Tools removed</div>' + renderList(diff.tools.removed) + '</div>';
+    }
+
+    function renderContextWaterfall() {
+      const waterfall = state.contextWaterfall;
+      if (!waterfall) {
+        return '<div class="empty">Select an agent request to inspect its context waterfall.</div>';
+      }
+      if (waterfall.reason) {
+        return '<div class="empty">' + escapeHtml(waterfall.reason) + '</div>';
+      }
+      return '<div class="metric-grid">' +
+        metric('Context chars', waterfall.totalChars) +
+        metric('Context delta', waterfall.totalDelta === null ? 'n/a' : signed(waterfall.totalDelta)) +
+        metric('Messages', waterfall.summary.messageCount) +
+        metric('Tools', waterfall.summary.toolCount) +
+        metric('Skills', waterfall.summary.suspectedSkillCount) +
+        metric('Tool results', waterfall.summary.toolResultCount) +
+        '</div>' +
+        '<div class="panel"><div class="panel-title">Context Waterfall</div>' + renderWaterfallSegments(waterfall.segments, 'primary') + '</div>' +
+        '<div class="panel"><div class="panel-title">System Breakdown</div>' + renderWaterfallSegments(waterfall.segments, 'system_subsection') + '</div>' +
+        '<div class="panel"><div class="panel-title">Messages Breakdown</div>' + renderWaterfallSegments(waterfall.segments, 'messages_subsection') + '</div>';
+    }
+
+    function renderWaterfallSegments(segments, group) {
+      const filtered = (segments || []).filter((segment) => segment.group === group);
+      if (!filtered.length) return '<span class="secondary">none</span>';
+      return filtered.map((segment) => {
+        const width = Math.max(1, Math.min(100, Number(segment.percent) || 0));
+        const delta = segment.deltaChars === null ? 'first request' : signed(segment.deltaChars);
+        return '<div class="waterfall-row">' +
+          '<div class="waterfall-heading">' +
+            '<span class="primary">' + escapeHtml(segment.label) + '</span>' +
+            '<span class="secondary">' + escapeHtml(segment.chars + ' chars - ' + segment.percent + '% - ' + delta + ' - items ' + segment.itemCount) + '</span>' +
+          '</div>' +
+          '<div class="waterfall-track"><div class="waterfall-bar" style="width: ' + width + '%"></div></div>' +
+          (segment.preview ? '<pre class="raw">' + escapeHtml(segment.preview) + '</pre>' : '') +
+          '</div>';
+      }).join('');
     }
 
     function renderAgent() {

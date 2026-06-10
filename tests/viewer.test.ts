@@ -226,6 +226,31 @@ describe("viewer", () => {
     });
   });
 
+  it("returns context waterfall for a request", async () => {
+    const requests = store.listRequests("session-a");
+    const response = await app.inject({ method: "GET", url: `/api/requests/${requests[0].id}/context-waterfall` });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      requestId: requests[0].id,
+      previousRequestId: requests[1].id,
+      reason: null,
+      summary: {
+        messageCount: 3,
+        toolCount: 2,
+        suspectedSkillCount: 1
+      },
+      segments: expect.arrayContaining([
+        expect.objectContaining({ id: "system", group: "primary" }),
+        expect.objectContaining({ id: "tools_schema", group: "primary", itemCount: 2 }),
+        expect.objectContaining({ id: "messages", group: "primary", itemCount: 3 }),
+        expect.objectContaining({ id: "skills", parentId: "system", itemCount: 1 }),
+        expect.objectContaining({ id: "latest_user_input", parentId: "messages", preview: "next question" }),
+        expect.objectContaining({ id: "assistant_history", parentId: "messages", itemCount: 1 })
+      ])
+    });
+  });
+
   it("returns response stream preview for a request", async () => {
     const requests = store.listRequests("session-a");
     const response = await app.inject({ method: "GET", url: `/api/requests/${requests[0].id}/response-preview` });
@@ -608,6 +633,7 @@ describe("viewer", () => {
     expect(response.body).toContain("Timeline");
     expect(response.body).toContain("Turn");
     expect(response.body).toContain("Diff");
+    expect(response.body).toContain("Waterfall");
     expect(response.body).toContain("System");
     expect(response.body).toContain("Diagnostics");
     expect(response.body).toContain("Agent");
@@ -648,6 +674,8 @@ describe("viewer", () => {
     expect(response.body).toContain("watch token");
     expect(response.body).toContain("renderTimeline");
     expect(response.body).toContain("renderContextDiff");
+    expect(response.body).toContain("contextWaterfall");
+    expect(response.body).toContain("renderContextWaterfall");
     expect(response.body).toContain("responsePreview");
     expect(response.body).toContain("renderResponsePreview");
     expect(response.body).toContain("turnDetail");
