@@ -169,6 +169,13 @@ npm.cmd run dev -- --session-id manual-test
 npm.cmd run watch -- server --inspect-body
 ```
 
+Viewer code is split by responsibility:
+
+- `src/viewer.ts` serves the local API and HTML response.
+- `src/viewer-html.ts` composes the browser shell.
+- `src/viewer-styles.ts` contains viewer CSS.
+- `src/viewer-client.ts` contains the browser-side viewer logic.
+
 The default ports are:
 
 - Viewer: `43110`
