@@ -138,7 +138,8 @@ describe("RequestStore", () => {
     store.createSession({
       id: "active-session",
       projectPath: "D:\\code\\active",
-      inspectBody: true
+      inspectBody: true,
+      watchToken: "watch-token"
     });
     store.logRequest({
       sessionId: "active-session",
@@ -151,11 +152,13 @@ describe("RequestStore", () => {
     expect(store.listSessionRequestStats()).toMatchObject([
       {
         sessionId: "active-session",
+        watchTokenPresent: true,
         requestCount: 1,
         lastRequestAt: "2026-06-09T01:00:00.000Z"
       },
       {
         sessionId: "empty-session",
+        watchTokenPresent: false,
         requestCount: 0,
         lastRequestAt: null
       }

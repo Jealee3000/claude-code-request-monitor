@@ -126,6 +126,7 @@ The browser UI shows:
 - Markdown export for selected turn learning notes
 - Session-level agent search by prompt, response, tool, tool input, and suspected skill
 - Auto-refreshing request list with a manual Refresh button
+- Capture diagnostics with per-session routing, inspect-body, and no-request hints
 - Request detail
 - Redacted JSON payloads when inspect mode is enabled
 - Search within request detail JSON

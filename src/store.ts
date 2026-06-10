@@ -51,6 +51,7 @@ interface SessionRequestStatsRow {
   started_at: string;
   project_path: string;
   inspect_body: 0 | 1;
+  watch_token: string | null;
   claude_session_id: string | null;
   request_count: number;
   last_request_at: string | null;
@@ -294,6 +295,7 @@ export class RequestStore {
           s.started_at,
           s.project_path,
           s.inspect_body,
+          s.watch_token,
           s.claude_session_id,
           COUNT(r.id) AS request_count,
           MAX(r.started_at) AS last_request_at
@@ -309,6 +311,7 @@ export class RequestStore {
       startedAt: row.started_at,
       projectPath: row.project_path,
       inspectBody: row.inspect_body === 1,
+      watchTokenPresent: Boolean(row.watch_token),
       claudeSessionId: row.claude_session_id,
       requestCount: row.request_count,
       lastRequestAt: row.last_request_at

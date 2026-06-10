@@ -360,7 +360,31 @@ export function renderViewerClientScript(repoRoot: string): string {
         metric('Active', d.activeSessions) +
         metric('Zero request', d.zeroRequestSessions) +
         metric('Latest request', d.latestRequestAt || 'none') +
-        '</div>' + issues;
+        '</div>' + issues +
+        '<div class="panel"><div class="panel-title">Capture checks</div>' + renderSessionChecks(d.sessionChecks) + '</div>';
+    }
+
+    function renderSessionChecks(checks) {
+      if (!checks || !checks.length) {
+        return '<span class="secondary">No watch sessions to inspect.</span>';
+      }
+      return checks.map((check) => '<div class="row issue ' + escapeHtml(statusSeverity(check.status)) + '">' +
+        '<div class="primary">' + escapeHtml(check.sessionId + ' - ' + check.status) + '</div>' +
+        '<div class="secondary">' + escapeHtml(check.summary || '') + '</div>' +
+        '<div class="secondary">' + escapeHtml(check.projectPath || '') + '</div>' +
+        '<div class="secondary">Claude session: ' + escapeHtml(check.claudeSessionId || 'none') + '</div>' +
+        '<div class="secondary">inspect-body: ' + escapeHtml(check.inspectBody ? 'on' : 'off') +
+          ' - watch token: ' + escapeHtml(check.watchTokenPresent ? 'present' : 'missing') +
+          ' - requests: ' + escapeHtml(check.requestCount) +
+          ' - latest: ' + escapeHtml(check.lastRequestAt || 'none') + '</div>' +
+        '<div class="secondary">Hints</div>' + renderList(check.hints) +
+        '</div>').join('');
+    }
+
+    function statusSeverity(status) {
+      if (status === 'not_routable') return 'bad';
+      if (status === 'waiting' || status === 'metadata_only') return 'warn';
+      return 'info';
     }
 
     function powerShellCommand(session) {

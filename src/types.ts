@@ -80,6 +80,7 @@ export interface SessionRequestStats {
   startedAt: string;
   projectPath: string;
   inspectBody: boolean;
+  watchTokenPresent: boolean;
   claudeSessionId: string | null;
   requestCount: number;
   lastRequestAt: string | null;

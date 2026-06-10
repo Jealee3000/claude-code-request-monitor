@@ -397,7 +397,16 @@ describe("viewer", () => {
       totalSessions: 1,
       activeSessions: 1,
       zeroRequestSessions: 0,
-      latestRequestAt: "2026-06-09T01:01:00.000Z"
+      latestRequestAt: "2026-06-09T01:01:00.000Z",
+      sessionChecks: [
+        {
+          sessionId: "session-a",
+          status: "capturing",
+          inspectBody: true,
+          watchTokenPresent: false,
+          requestCount: 2
+        }
+      ]
     });
   });
 
@@ -477,6 +486,9 @@ describe("viewer", () => {
     expect(response.body).toContain("refreshRequests");
     expect(response.body).toContain("copyCommand");
     expect(response.body).toContain("loadDiagnostics");
+    expect(response.body).toContain("renderSessionChecks");
+    expect(response.body).toContain("Capture checks");
+    expect(response.body).toContain("watch token");
     expect(response.body).toContain("renderTimeline");
     expect(response.body).toContain("renderContextDiff");
     expect(response.body).toContain("responsePreview");

@@ -155,6 +155,7 @@ export const VIEWER_STYLES = String.raw`    :root {
     }
     .filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
     .issue { border-left: 3px solid var(--warn); padding-left: 8px; }
+    .issue.info { border-left-color: var(--accent); }
     .issue.bad { border-left-color: var(--bad); }
     .primary { font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
     .secondary { margin-top: 4px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
