@@ -146,6 +146,29 @@ Redaction masks:
 - bearer tokens
 - Windows user home paths
 
+You can add project-specific rules with a JSON file:
+
+```json
+{
+  "headers": ["x-workspace-secret"],
+  "fields": ["projectSecret"],
+  "paths": ["metadata.workspace.id", "messages.*.privateValue"],
+  "textPatterns": ["workspace-[0-9]+"]
+}
+```
+
+Use it from PowerShell:
+
+```powershell
+.\scripts\claude-watch.ps1 -InspectBody -RedactionConfig .\redaction.json
+```
+
+Or with the Node CLI:
+
+```powershell
+npm.cmd run watch -- server --inspect-body --redaction-config .\redaction.json
+```
+
 Inspect mode can still capture sensitive prompt content before redaction rules know about it. Use it only in local projects where this is acceptable.
 
 ## Stop the Watcher

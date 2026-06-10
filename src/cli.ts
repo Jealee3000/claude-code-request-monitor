@@ -5,6 +5,7 @@ import { hideBin } from "yargs/helpers";
 import { parseConfig } from "./config.js";
 import { prepareLocalCertificate } from "./cert.js";
 import { startProxyServer } from "./proxy.js";
+import { configureRedactionRules } from "./redact.js";
 import { RequestStore } from "./store.js";
 import { buildViewerServer } from "./viewer.js";
 
@@ -33,7 +34,8 @@ void yargs(hideBin(process.argv))
         .option("data-dir", { type: "string" })
         .option("session-id", { type: "string" })
         .option("project", { type: "string" })
-        .option("inspect-body", { type: "boolean" }),
+        .option("inspect-body", { type: "boolean" })
+        .option("redaction-config", { type: "string" }),
     async (argv) => {
       await startServer(commandArgsAfter("server"));
     }
@@ -72,6 +74,7 @@ void yargs(hideBin(process.argv))
 
 async function startServer(argv: string[]): Promise<void> {
   const config = parseConfig(argv);
+  configureRedactionRules(config.redactionRules);
   const store = new RequestStore(config.dbPath);
   store.init();
   store.createSession({

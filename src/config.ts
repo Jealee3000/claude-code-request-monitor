@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
+import { loadRedactionRulesFromFile } from "./redact.js";
 import type { MonitorConfig } from "./types.js";
 
 export function parseConfig(argv = hideBin(process.argv)): MonitorConfig {
@@ -34,10 +35,15 @@ export function parseConfig(argv = hideBin(process.argv)): MonitorConfig {
       type: "boolean",
       default: envBoolean("CLAUDE_WATCH_INSPECT_BODY", false)
     })
+    .option("redaction-config", {
+      type: "string",
+      default: envString("CLAUDE_WATCH_REDACTION_CONFIG", "")
+    })
     .help()
     .parseSync();
 
   const dataDir = resolve(String(parsed.dataDir));
+  const redactionConfigPath = parsed.redactionConfig ? resolve(String(parsed.redactionConfig)) : null;
   mkdirSync(dataDir, { recursive: true });
 
   return {
@@ -48,7 +54,9 @@ export function parseConfig(argv = hideBin(process.argv)): MonitorConfig {
     dbPath: resolve(dataDir, "requests.sqlite"),
     sessionId: String(parsed.sessionId),
     projectPath: resolve(String(parsed.project)),
-    inspectBody: Boolean(parsed.inspectBody)
+    inspectBody: Boolean(parsed.inspectBody),
+    redactionConfigPath,
+    redactionRules: redactionConfigPath ? loadRedactionRulesFromFile(redactionConfigPath) : {}
   };
 }
 

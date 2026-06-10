@@ -11,6 +11,8 @@ param(
 
   [int]$ProxyPort = 43111,
 
+  [string]$RedactionConfig,
+
   [switch]$RestartWatcher,
 
   [string]$Resume,
@@ -45,6 +47,7 @@ Options:
   -Project       Project directory where Claude Code should start.
   -ViewerPort    Local viewer port. Default: 43110.
   -ProxyPort     Local proxy port. Default: 43111.
+  -RedactionConfig Optional JSON file with extra redaction rules.
   -RestartWatcher Stop existing processes that listen on the viewer/proxy ports before starting.
   -Resume        Resume a Claude conversation by session ID, or open Claude's resume picker.
   -ContinueConversation Continue the most recent Claude conversation in the project directory.
@@ -191,6 +194,10 @@ $ServiceArgs = @(
 
 if ($InspectBody) {
   $ServiceArgs += "--inspect-body"
+}
+if ($RedactionConfig) {
+  $ServiceArgs += "--redaction-config"
+  $ServiceArgs += (Resolve-Path $RedactionConfig).Path
 }
 
 $EffectiveClaudeArgs = @()

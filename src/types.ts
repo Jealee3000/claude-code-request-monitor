@@ -7,6 +7,15 @@ export interface MonitorConfig {
   sessionId: string;
   projectPath: string;
   inspectBody: boolean;
+  redactionConfigPath: string | null;
+  redactionRules: RedactionRules;
+}
+
+export interface RedactionRules {
+  headerNames?: string[];
+  fieldNames?: string[];
+  fieldPaths?: string[];
+  textPatterns?: string[];
 }
 
 export interface SessionRecord {

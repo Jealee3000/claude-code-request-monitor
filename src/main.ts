@@ -1,11 +1,13 @@
 import { parseConfig } from "./config.js";
 import { prepareLocalCertificate } from "./cert.js";
 import { startProxyServer } from "./proxy.js";
+import { configureRedactionRules } from "./redact.js";
 import { RequestStore } from "./store.js";
 import { buildViewerServer } from "./viewer.js";
 
 async function main(): Promise<void> {
   const config = parseConfig();
+  configureRedactionRules(config.redactionRules);
   const store = new RequestStore(config.dbPath);
   store.init();
   store.createSession({
