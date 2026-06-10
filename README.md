@@ -121,6 +121,7 @@ The browser UI shows:
 - Local Claude sessions with copyable resume commands
 - Request timeline
 - Agent Insight turn summaries
+- Turn Compare for context, tools, skills, and final response differences
 - Session-level agent search by prompt, response, tool, tool input, and suspected skill
 - Auto-refreshing request list with a manual Refresh button
 - Request detail

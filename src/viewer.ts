@@ -9,6 +9,7 @@ import { parseResponsePreviewFromDetail } from "./response-stream.js";
 import { buildRequestSearch } from "./request-search.js";
 import { buildSystemPromptPreview } from "./system-prompt.js";
 import { buildTurnDetail } from "./turn-detail.js";
+import { buildTurnCompare } from "./turn-compare.js";
 import { buildTurnTimeline } from "./turn-timeline.js";
 import { buildTurnReplay } from "./turn-replay.js";
 import type { RequestStore } from "./store.js";
@@ -103,6 +104,25 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
 
     return buildTurnDetail(store.listRequestDetails(detail.sessionId), requestId);
   });
+
+  app.get<{ Params: { id: string }; Querystring: { baselineRequestId?: string } }>(
+    "/api/requests/:id/turn-compare",
+    async (request, reply) => {
+      const requestId = Number(request.params.id);
+      const detail = Number.isFinite(requestId) ? store.getRequestDetail(requestId) : undefined;
+
+      if (!detail) {
+        return reply.code(404).send({ error: "Request not found" });
+      }
+
+      const baselineRequestId = request.query.baselineRequestId ? Number(request.query.baselineRequestId) : null;
+      return buildTurnCompare(
+        store.listRequestDetails(detail.sessionId),
+        requestId,
+        Number.isFinite(baselineRequestId) ? baselineRequestId : null
+      );
+    }
+  );
 
   app.get<{ Params: { id: string } }>("/api/requests/:id/system-prompt", async (request, reply) => {
     const requestId = Number(request.params.id);
@@ -442,6 +462,7 @@ function renderHtml(repoRoot: string): string {
         <div class="tabs" role="tablist">
           <button class="tab active" data-tab="overview" type="button">Overview</button>
           <button class="tab" data-tab="insight" type="button">Insight</button>
+          <button class="tab" data-tab="compare" type="button">Compare</button>
           <button class="tab" data-tab="replay" type="button">Replay</button>
           <button class="tab" data-tab="timeline" type="button">Timeline</button>
           <button class="tab" data-tab="turn" type="button">Turn</button>
@@ -470,6 +491,7 @@ function renderHtml(repoRoot: string): string {
       contextDiff: null,
       responsePreview: null,
       turnDetail: null,
+      turnCompare: null,
       systemPrompt: null,
       turnReplay: null,
       agentInsight: null,
@@ -544,6 +566,7 @@ function renderHtml(repoRoot: string): string {
       state.contextDiff = null;
       state.responsePreview = null;
       state.turnDetail = null;
+      state.turnCompare = null;
       state.systemPrompt = null;
       state.turnReplay = null;
       state.agentInsight = null;
@@ -572,6 +595,7 @@ function renderHtml(repoRoot: string): string {
           state.contextDiff = null;
           state.responsePreview = null;
           state.turnDetail = null;
+          state.turnCompare = null;
           state.systemPrompt = null;
           state.turnReplay = null;
           state.agentInsight = null;
@@ -625,11 +649,12 @@ function renderHtml(repoRoot: string): string {
     async function selectRequest(id, nextTab) {
       state.selectedRequest = id;
       const encodedId = encodeURIComponent(id);
-      const [detail, contextDiff, responsePreview, turnDetail, systemPrompt, turnReplay, agentInsight] = await Promise.all([
+      const [detail, contextDiff, responsePreview, turnDetail, turnCompare, systemPrompt, turnReplay, agentInsight] = await Promise.all([
         fetchJson('/api/requests/' + encodedId),
         fetchJson('/api/requests/' + encodedId + '/context-diff'),
         fetchJson('/api/requests/' + encodedId + '/response-preview'),
         fetchJson('/api/requests/' + encodedId + '/turn-detail'),
+        fetchJson('/api/requests/' + encodedId + '/turn-compare'),
         fetchJson('/api/requests/' + encodedId + '/system-prompt'),
         fetchJson('/api/requests/' + encodedId + '/turn-replay'),
         fetchJson('/api/requests/' + encodedId + '/agent-insight')
@@ -638,6 +663,7 @@ function renderHtml(repoRoot: string): string {
       state.contextDiff = contextDiff;
       state.responsePreview = responsePreview;
       state.turnDetail = turnDetail;
+      state.turnCompare = turnCompare;
       state.systemPrompt = systemPrompt;
       state.turnReplay = turnReplay;
       state.agentInsight = agentInsight;
@@ -794,6 +820,7 @@ function renderHtml(repoRoot: string): string {
       const htmlByTab = {
         overview: renderOverview,
         insight: renderAgentInsight,
+        compare: renderTurnCompare,
         replay: renderTurnReplay,
         timeline: renderTimeline,
         turn: renderTurnDetail,
@@ -875,6 +902,46 @@ function renderHtml(repoRoot: string): string {
         '<div class="secondary">' + escapeHtml(item.detail) + '</div>' +
         '<div class="secondary">' + renderJsonTree(item.values || {}, 'values') + '</div>' +
         '</div>').join('');
+    }
+
+    function renderTurnCompare() {
+      const compare = state.turnCompare;
+      if (!compare) {
+        return '<div class="empty">Select an agent request to compare it with the previous turn.</div>';
+      }
+      if (!compare.comparable) {
+        return '<div class="panel"><div class="panel-title">Current turn</div>' + renderCompareSide(compare.current) + '</div>' +
+          '<div class="empty">' + escapeHtml(compare.reason || 'No comparable baseline turn') + '</div>';
+      }
+      return '<div class="panel"><div class="panel-title">Headline</div><div class="primary">' +
+        escapeHtml(compare.headline) +
+        '</div></div>' +
+        '<div class="metric-grid">' +
+        metric('Requests delta', signed(compare.deltas.requestCount)) +
+        metric('Context delta', signed(compare.deltas.contextChars)) +
+        metric('System delta', signed(compare.deltas.systemChars)) +
+        metric('Tool schema delta', signed(compare.deltas.toolSchemaChars)) +
+        metric('Tools delta', signed(compare.deltas.toolCount)) +
+        metric('Skills delta', signed(compare.deltas.suspectedSkillCount)) +
+        metric('Tool uses delta', signed(compare.deltas.toolUseCount)) +
+        metric('Tool results delta', signed(compare.deltas.toolResultCount)) +
+        '</div>' +
+        '<div class="panel"><div class="panel-title">Current turn</div>' + renderCompareSide(compare.current) + '</div>' +
+        '<div class="panel"><div class="panel-title">Baseline turn</div>' + renderCompareSide(compare.baseline) + '</div>' +
+        '<div class="panel"><div class="panel-title">Tools added</div>' + renderList(compare.toolDiff.added) + '</div>' +
+        '<div class="panel"><div class="panel-title">Tools removed</div>' + renderList(compare.toolDiff.removed) + '</div>' +
+        '<div class="panel"><div class="panel-title">Skills added</div>' + renderList(compare.skillDiff.added) + '</div>' +
+        '<div class="panel"><div class="panel-title">Skills removed</div>' + renderList(compare.skillDiff.removed) + '</div>' +
+        '<div class="panel"><div class="panel-title">Final response changed</div><div class="primary">' + escapeHtml(compare.finalResponseChanged) + '</div></div>';
+    }
+
+    function renderCompareSide(side) {
+      if (!side) return '<span class="secondary">none</span>';
+      return '<div class="secondary">Requests: ' + escapeHtml(side.requestIds.join(', ')) + ' - ' + escapeHtml(side.firstRequestAt) + '</div>' +
+        '<div class="secondary">Prompt: ' + escapeHtml(side.latestUserText || 'none') + '</div>' +
+        '<div class="secondary">Context: ' + escapeHtml(side.maxContextChars) + ' - Tools: ' + escapeHtml(side.toolNames.join(', ') || 'none') + ' - Skills: ' + escapeHtml(side.suspectedSkillNames.join(', ') || 'none') + '</div>' +
+        '<div class="secondary">Tool uses/results: ' + escapeHtml(side.toolUseCount + ' / ' + side.toolResultCount) + '</div>' +
+        '<pre class="raw">' + escapeHtml(side.finalAssistantPreview || 'No assistant text') + '</pre>';
     }
 
     function renderTurnReplay() {

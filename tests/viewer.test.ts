@@ -274,6 +274,35 @@ describe("viewer", () => {
     });
   });
 
+  it("returns turn compare for a request", async () => {
+    const requests = store.listRequests("session-a");
+    const response = await app.inject({ method: "GET", url: `/api/requests/${requests[0].id}/turn-compare` });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      comparable: true,
+      current: {
+        requestIds: [requests[0].id],
+        latestUserText: "next question",
+        toolNames: ["Read", "Edit"],
+        suspectedSkillNames: ["browser:control-in-app-browser"]
+      },
+      baseline: {
+        requestIds: [requests[1].id],
+        latestUserText: "hello",
+        toolNames: ["Read"]
+      },
+      deltas: {
+        requestCount: 0,
+        toolCount: 1
+      },
+      toolDiff: {
+        added: ["Edit"],
+        unchanged: ["Read"]
+      }
+    });
+  });
+
   it("returns system prompt preview for a request", async () => {
     const requests = store.listRequests("session-a");
     const response = await app.inject({ method: "GET", url: `/api/requests/${requests[0].id}/system-prompt` });
@@ -398,6 +427,7 @@ describe("viewer", () => {
     expect(response.body).toContain("claude-watch-root");
     expect(response.body).toContain("Overview");
     expect(response.body).toContain("Insight");
+    expect(response.body).toContain("Compare");
     expect(response.body).toContain("Replay");
     expect(response.body).toContain("Timeline");
     expect(response.body).toContain("Turn");
@@ -438,5 +468,7 @@ describe("viewer", () => {
     expect(response.body).toContain("renderTurnReplay");
     expect(response.body).toContain("agentInsight");
     expect(response.body).toContain("renderAgentInsight");
+    expect(response.body).toContain("turnCompare");
+    expect(response.body).toContain("renderTurnCompare");
   });
 });
