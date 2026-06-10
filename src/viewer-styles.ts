@@ -287,6 +287,17 @@ export const VIEWER_STYLES = String.raw`    :root {
       background: var(--accent);
     }
     .waterfall-row pre.raw { margin-top: 8px; }
+    .graph-edge, .graph-node {
+      padding: 9px 10px;
+      margin-top: 8px;
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      border-radius: 8px;
+      background: #fbfcfd;
+    }
+    .graph-node.tool_use { border-left-color: #1d4ed8; }
+    .graph-node.tool_result { border-left-color: var(--warn); }
+    .graph-node pre.raw { margin-top: 8px; }
     .empty { padding: 16px; color: var(--muted); font-size: 13px; }
     .pill { color: var(--accent); font-size: 12px; font-weight: 700; }
     .flag { display: inline-block; margin: 2px 4px 2px 0; padding: 2px 6px; border-radius: 999px; background: #fff4ed; color: var(--warn); font-size: 12px; }

@@ -20,6 +20,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       turnExport: null,
       systemPrompt: null,
       turnReplay: null,
+      toolGraph: null,
       agentInsight: null,
       selectedSession: null,
       selectedRequest: null,
@@ -124,6 +125,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.turnExport = null;
       state.systemPrompt = null;
       state.turnReplay = null;
+      state.toolGraph = null;
       state.agentInsight = null;
       state.sessionCompare = await fetchJson('/api/sessions/' + encodeURIComponent(id) + '/compare');
       await refreshRequests({ resetSelection: true });
@@ -157,6 +159,7 @@ export function renderViewerClientScript(repoRoot: string): string {
           state.turnExport = null;
           state.systemPrompt = null;
           state.turnReplay = null;
+          state.toolGraph = null;
           state.agentInsight = null;
           renderDetail();
         }
@@ -219,7 +222,7 @@ export function renderViewerClientScript(repoRoot: string): string {
     async function selectRequest(id, nextTab) {
       state.selectedRequest = id;
       const encodedId = encodeURIComponent(id);
-      const [detail, contextDiff, contextWaterfall, responsePreview, turnDetail, turnAnnotation, turnCompare, turnExport, systemPrompt, turnReplay, agentInsight] = await Promise.all([
+      const [detail, contextDiff, contextWaterfall, responsePreview, turnDetail, turnAnnotation, turnCompare, turnExport, systemPrompt, turnReplay, toolGraph, agentInsight] = await Promise.all([
         fetchJson('/api/requests/' + encodedId),
         fetchJson('/api/requests/' + encodedId + '/context-diff'),
         fetchJson('/api/requests/' + encodedId + '/context-waterfall'),
@@ -230,6 +233,7 @@ export function renderViewerClientScript(repoRoot: string): string {
         fetchJson('/api/requests/' + encodedId + '/turn-export'),
         fetchJson('/api/requests/' + encodedId + '/system-prompt'),
         fetchJson('/api/requests/' + encodedId + '/turn-replay'),
+        fetchJson('/api/requests/' + encodedId + '/tool-graph'),
         fetchJson('/api/requests/' + encodedId + '/agent-insight')
       ]);
       state.detail = detail;
@@ -242,6 +246,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.turnExport = turnExport;
       state.systemPrompt = systemPrompt;
       state.turnReplay = turnReplay;
+      state.toolGraph = toolGraph;
       state.agentInsight = agentInsight;
       if (nextTab) {
         state.tab = nextTab;
@@ -274,6 +279,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.turnExport = null;
       state.systemPrompt = null;
       state.turnReplay = null;
+      state.toolGraph = null;
       state.agentInsight = null;
     }
 
@@ -542,6 +548,7 @@ export function renderViewerClientScript(repoRoot: string): string {
         compare: renderTurnCompare,
         export: renderTurnExport,
         replay: renderTurnReplay,
+        toolGraph: renderToolGraph,
         timeline: renderTimeline,
         turn: renderTurnDetail,
         diff: renderContextDiff,
@@ -765,6 +772,44 @@ export function renderViewerClientScript(repoRoot: string): string {
         (event.preview ? '<pre class="raw">' + escapeHtml(event.preview) + '</pre>' : '') +
         (event.inputJson ? '<div class="secondary">Input</div><pre class="raw">' + escapeHtml(event.inputJson) + '</pre>' : '') +
         (event.resultChars === undefined ? '' : '<div class="secondary">Result chars: ' + escapeHtml(event.resultChars) + ' - Error: ' + escapeHtml(event.isError) + '</div>') +
+        '</div>').join('');
+    }
+
+    function renderToolGraph() {
+      const graph = state.toolGraph;
+      if (!graph) {
+        return '<div class="empty">Select an agent request to inspect the tool causality graph.</div>';
+      }
+      return '<div class="metric-grid">' +
+        metric('Requests', graph.summary.requestCount) +
+        metric('Tool uses', graph.summary.toolUseCount) +
+        metric('Tool results', graph.summary.toolResultCount) +
+        metric('Nodes', graph.summary.nodeCount) +
+        metric('Edges', graph.summary.edgeCount) +
+        '</div>' +
+        '<div class="panel"><div class="panel-title">Prompt</div><pre class="raw">' +
+        escapeHtml(graph.latestUserText || 'none') +
+        '</pre></div>' +
+        '<div class="panel"><div class="panel-title">Causal Edges</div>' + renderToolGraphEdges(graph.edges) + '</div>' +
+        '<div class="panel"><div class="panel-title">Nodes</div>' + renderToolGraphNodes(graph.nodes) + '</div>';
+    }
+
+    function renderToolGraphEdges(edges) {
+      if (!edges || !edges.length) return '<span class="secondary">none</span>';
+      return edges.map((edge, index) => '<div class="graph-edge">' +
+        '<div class="primary">' + escapeHtml(String(index + 1) + '. ' + edge.from + ' -> ' + edge.to) + '</div>' +
+        '<div class="secondary">' + escapeHtml(edge.relation + ' - ' + edge.label) + '</div>' +
+        '</div>').join('');
+    }
+
+    function renderToolGraphNodes(nodes) {
+      if (!nodes || !nodes.length) return '<span class="secondary">none</span>';
+      return nodes.map((node) => '<div class="graph-node ' + escapeHtml(node.kind) + '">' +
+        '<div class="primary">' + escapeHtml(node.label) + '</div>' +
+        '<div class="secondary">' + escapeHtml(node.id + (node.requestId ? ' - request ' + node.requestId : '') + (node.toolName ? ' - ' + node.toolName : '')) + '</div>' +
+        '<div class="secondary">' + escapeHtml(node.summary || '') + '</div>' +
+        '<div class="secondary">Context: ' + escapeHtml(node.contextChars ?? 'n/a') + ' (' + escapeHtml(node.contextDelta === null ? 'n/a' : signed(node.contextDelta)) + ')</div>' +
+        (node.preview ? '<pre class="raw">' + escapeHtml(node.preview) + '</pre>' : '') +
         '</div>').join('');
     }
 

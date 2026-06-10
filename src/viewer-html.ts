@@ -68,6 +68,7 @@ ${VIEWER_STYLES}
           <button class="tab" data-tab="compare" type="button">Compare</button>
           <button class="tab" data-tab="export" type="button">Export</button>
           <button class="tab" data-tab="replay" type="button">Replay</button>
+          <button class="tab" data-tab="toolGraph" type="button">Tool Graph</button>
           <button class="tab" data-tab="timeline" type="button">Timeline</button>
           <button class="tab" data-tab="turn" type="button">Turn</button>
           <button class="tab" data-tab="diff" type="button">Diff</button>

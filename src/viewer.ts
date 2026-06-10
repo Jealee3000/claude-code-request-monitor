@@ -12,6 +12,7 @@ import { buildRequestSearch } from "./request-search.js";
 import { buildSystemPromptPreview } from "./system-prompt.js";
 import { buildSessionCompare } from "./session-compare.js";
 import { buildSessionExport } from "./session-export.js";
+import { buildToolGraph } from "./tool-graph.js";
 import { buildTurnDetail } from "./turn-detail.js";
 import { buildTurnCompare } from "./turn-compare.js";
 import { buildTurnExport } from "./turn-export.js";
@@ -248,6 +249,17 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
     }
 
     return buildTurnReplay(store.listRequestDetails(detail.sessionId), requestId);
+  });
+
+  app.get<{ Params: { id: string } }>("/api/requests/:id/tool-graph", async (request, reply) => {
+    const requestId = Number(request.params.id);
+    const detail = Number.isFinite(requestId) ? store.getRequestDetail(requestId) : undefined;
+
+    if (!detail) {
+      return reply.code(404).send({ error: "Request not found" });
+    }
+
+    return buildToolGraph(store.listRequestDetails(detail.sessionId), requestId);
   });
 
   app.get<{ Params: { id: string } }>("/api/requests/:id/agent-insight", async (request, reply) => {
