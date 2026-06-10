@@ -10,6 +10,7 @@ import { buildRequestSearch } from "./request-search.js";
 import { buildSystemPromptPreview } from "./system-prompt.js";
 import { buildTurnDetail } from "./turn-detail.js";
 import { buildTurnCompare } from "./turn-compare.js";
+import { buildTurnExport } from "./turn-export.js";
 import { buildTurnTimeline } from "./turn-timeline.js";
 import { buildTurnReplay } from "./turn-replay.js";
 import type { RequestStore } from "./store.js";
@@ -123,6 +124,17 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
       );
     }
   );
+
+  app.get<{ Params: { id: string } }>("/api/requests/:id/turn-export", async (request, reply) => {
+    const requestId = Number(request.params.id);
+    const detail = Number.isFinite(requestId) ? store.getRequestDetail(requestId) : undefined;
+
+    if (!detail) {
+      return reply.code(404).send({ error: "Request not found" });
+    }
+
+    return buildTurnExport(store.listRequestDetails(detail.sessionId), requestId);
+  });
 
   app.get<{ Params: { id: string } }>("/api/requests/:id/system-prompt", async (request, reply) => {
     const requestId = Number(request.params.id);
@@ -463,6 +475,7 @@ function renderHtml(repoRoot: string): string {
           <button class="tab active" data-tab="overview" type="button">Overview</button>
           <button class="tab" data-tab="insight" type="button">Insight</button>
           <button class="tab" data-tab="compare" type="button">Compare</button>
+          <button class="tab" data-tab="export" type="button">Export</button>
           <button class="tab" data-tab="replay" type="button">Replay</button>
           <button class="tab" data-tab="timeline" type="button">Timeline</button>
           <button class="tab" data-tab="turn" type="button">Turn</button>
@@ -492,6 +505,7 @@ function renderHtml(repoRoot: string): string {
       responsePreview: null,
       turnDetail: null,
       turnCompare: null,
+      turnExport: null,
       systemPrompt: null,
       turnReplay: null,
       agentInsight: null,
@@ -524,6 +538,11 @@ function renderHtml(repoRoot: string): string {
       const target = event.target;
       if (target instanceof HTMLElement && target.classList.contains('copy-command')) {
         copyCommand(target.dataset.command || '').catch((error) => {
+          target.textContent = error.message;
+        });
+      }
+      if (target instanceof HTMLElement && target.classList.contains('copy-export-markdown')) {
+        copyMarkdownExport().catch((error) => {
           target.textContent = error.message;
         });
       }
@@ -567,6 +586,7 @@ function renderHtml(repoRoot: string): string {
       state.responsePreview = null;
       state.turnDetail = null;
       state.turnCompare = null;
+      state.turnExport = null;
       state.systemPrompt = null;
       state.turnReplay = null;
       state.agentInsight = null;
@@ -596,6 +616,7 @@ function renderHtml(repoRoot: string): string {
           state.responsePreview = null;
           state.turnDetail = null;
           state.turnCompare = null;
+          state.turnExport = null;
           state.systemPrompt = null;
           state.turnReplay = null;
           state.agentInsight = null;
@@ -649,12 +670,13 @@ function renderHtml(repoRoot: string): string {
     async function selectRequest(id, nextTab) {
       state.selectedRequest = id;
       const encodedId = encodeURIComponent(id);
-      const [detail, contextDiff, responsePreview, turnDetail, turnCompare, systemPrompt, turnReplay, agentInsight] = await Promise.all([
+      const [detail, contextDiff, responsePreview, turnDetail, turnCompare, turnExport, systemPrompt, turnReplay, agentInsight] = await Promise.all([
         fetchJson('/api/requests/' + encodedId),
         fetchJson('/api/requests/' + encodedId + '/context-diff'),
         fetchJson('/api/requests/' + encodedId + '/response-preview'),
         fetchJson('/api/requests/' + encodedId + '/turn-detail'),
         fetchJson('/api/requests/' + encodedId + '/turn-compare'),
+        fetchJson('/api/requests/' + encodedId + '/turn-export'),
         fetchJson('/api/requests/' + encodedId + '/system-prompt'),
         fetchJson('/api/requests/' + encodedId + '/turn-replay'),
         fetchJson('/api/requests/' + encodedId + '/agent-insight')
@@ -664,6 +686,7 @@ function renderHtml(repoRoot: string): string {
       state.responsePreview = responsePreview;
       state.turnDetail = turnDetail;
       state.turnCompare = turnCompare;
+      state.turnExport = turnExport;
       state.systemPrompt = systemPrompt;
       state.turnReplay = turnReplay;
       state.agentInsight = agentInsight;
@@ -821,6 +844,7 @@ function renderHtml(repoRoot: string): string {
         overview: renderOverview,
         insight: renderAgentInsight,
         compare: renderTurnCompare,
+        export: renderTurnExport,
         replay: renderTurnReplay,
         timeline: renderTimeline,
         turn: renderTurnDetail,
@@ -942,6 +966,25 @@ function renderHtml(repoRoot: string): string {
         '<div class="secondary">Context: ' + escapeHtml(side.maxContextChars) + ' - Tools: ' + escapeHtml(side.toolNames.join(', ') || 'none') + ' - Skills: ' + escapeHtml(side.suspectedSkillNames.join(', ') || 'none') + '</div>' +
         '<div class="secondary">Tool uses/results: ' + escapeHtml(side.toolUseCount + ' / ' + side.toolResultCount) + '</div>' +
         '<pre class="raw">' + escapeHtml(side.finalAssistantPreview || 'No assistant text') + '</pre>';
+    }
+
+    function renderTurnExport() {
+      const exportNote = state.turnExport;
+      if (!exportNote) {
+        return '<div class="empty">Select an agent request to export a Markdown learning note.</div>';
+      }
+      return '<div class="panel"><div class="panel-title">Markdown export</div>' +
+        '<div class="primary">' + escapeHtml(exportNote.filename) + '</div>' +
+        '<div class="session-actions"><button class="small copy-export-markdown" type="button">Copy Markdown</button></div>' +
+        '</div>' +
+        '<div class="panel"><div class="panel-title">Preview</div><pre class="raw">' +
+        escapeHtml(exportNote.markdown) +
+        '</pre></div>';
+    }
+
+    async function copyMarkdownExport() {
+      if (!state.turnExport) return;
+      await navigator.clipboard.writeText(state.turnExport.markdown);
     }
 
     function renderTurnReplay() {

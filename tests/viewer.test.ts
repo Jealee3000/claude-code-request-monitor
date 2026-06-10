@@ -303,6 +303,21 @@ describe("viewer", () => {
     });
   });
 
+  it("returns markdown turn export for a request", async () => {
+    const requests = store.listRequests("session-a");
+    const response = await app.inject({ method: "GET", url: `/api/requests/${requests[0].id}/turn-export` });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      requestId: requests[0].id,
+      filename: expect.stringMatching(/^claude-watch-turn-\d+-.*\.md$/),
+      markdown: expect.stringContaining("# Claude Watch Turn Note")
+    });
+    expect(response.json().markdown).toContain("next question");
+    expect(response.json().markdown).toContain("## Agent Insight");
+    expect(response.json().markdown).toContain("## Replay");
+  });
+
   it("returns system prompt preview for a request", async () => {
     const requests = store.listRequests("session-a");
     const response = await app.inject({ method: "GET", url: `/api/requests/${requests[0].id}/system-prompt` });
@@ -428,6 +443,7 @@ describe("viewer", () => {
     expect(response.body).toContain("Overview");
     expect(response.body).toContain("Insight");
     expect(response.body).toContain("Compare");
+    expect(response.body).toContain("Export");
     expect(response.body).toContain("Replay");
     expect(response.body).toContain("Timeline");
     expect(response.body).toContain("Turn");
@@ -470,5 +486,8 @@ describe("viewer", () => {
     expect(response.body).toContain("renderAgentInsight");
     expect(response.body).toContain("turnCompare");
     expect(response.body).toContain("renderTurnCompare");
+    expect(response.body).toContain("turnExport");
+    expect(response.body).toContain("renderTurnExport");
+    expect(response.body).toContain("copyMarkdownExport");
   });
 });
