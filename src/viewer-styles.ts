@@ -298,6 +298,14 @@ export const VIEWER_STYLES = String.raw`    :root {
     .graph-node.tool_use { border-left-color: #1d4ed8; }
     .graph-node.tool_result { border-left-color: var(--warn); }
     .graph-node pre.raw { margin-top: 8px; }
+    details.response-raw summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    details.response-raw pre.raw { margin-top: 8px; }
     .empty { padding: 16px; color: var(--muted); font-size: 13px; }
     .pill { color: var(--accent); font-size: 12px; font-weight: 700; }
     .flag { display: inline-block; margin: 2px 4px 2px 0; padding: 2px 6px; border-radius: 999px; background: #fff4ed; color: var(--warn); font-size: 12px; }

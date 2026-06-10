@@ -260,6 +260,14 @@ describe("viewer", () => {
       stream: true,
       assistantText: "I will inspect ",
       usage: { inputTokens: 8, outputTokens: 16 },
+      layers: {
+        finalText: {
+          text: "I will inspect "
+        },
+        rawEvents: {
+          eventCount: 5
+        }
+      },
       toolUses: [
         {
           id: "toolu_viewer",
@@ -705,6 +713,9 @@ describe("viewer", () => {
     expect(response.body).toContain("renderContextWaterfall");
     expect(response.body).toContain("responsePreview");
     expect(response.body).toContain("renderResponsePreview");
+    expect(response.body).toContain("Readable response");
+    expect(response.body).toContain("Raw events");
+    expect(response.body).toContain("renderResponseLayerDetails");
     expect(response.body).toContain("turnDetail");
     expect(response.body).toContain("renderTurnDetail");
     expect(response.body).toContain("turnAnnotation");

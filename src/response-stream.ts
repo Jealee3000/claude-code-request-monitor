@@ -13,6 +13,36 @@ export interface ResponseStreamToolUse {
   inputJson: string;
 }
 
+export interface ResponsePreviewTextLayer {
+  title: string;
+  text: string;
+  chars: number;
+}
+
+export interface ResponsePreviewToolUseLayer extends ResponseStreamToolUse {
+  title: string;
+}
+
+export interface ResponsePreviewRawEventsLayer {
+  title: string;
+  eventCount: number;
+  events: ResponseStreamEvent[];
+}
+
+export interface ResponsePreviewRawStreamLayer {
+  title: string;
+  text: string | null;
+  chars: number;
+}
+
+export interface ResponsePreviewLayers {
+  finalText: ResponsePreviewTextLayer;
+  thinking: ResponsePreviewTextLayer;
+  toolUses: ResponsePreviewToolUseLayer[];
+  rawEvents: ResponsePreviewRawEventsLayer;
+  rawStream: ResponsePreviewRawStreamLayer;
+}
+
 export interface ResponseStreamPreview {
   stream: boolean;
   assistantText: string;
@@ -24,6 +54,7 @@ export interface ResponseStreamPreview {
   };
   events: ResponseStreamEvent[];
   rawText: string | null;
+  layers: ResponsePreviewLayers;
 }
 
 interface MutableToolUse extends ResponseStreamToolUse {
@@ -107,28 +138,79 @@ export function parseResponseStream(value: unknown): ResponseStreamPreview {
     }
   }
 
+  const toolUses = [...tools.values()]
+    .sort((a, b) => a.index - b.index)
+    .map(({ inputParts: _inputParts, ...tool }) => tool);
+
   return {
     stream: true,
     assistantText,
     thinkingText,
-    toolUses: [...tools.values()]
-      .sort((a, b) => a.index - b.index)
-      .map(({ inputParts: _inputParts, ...tool }) => tool),
+    toolUses,
     usage: { inputTokens, outputTokens },
     events,
-    rawText: value
+    rawText: value,
+    layers: buildLayers({
+      assistantText,
+      thinkingText,
+      toolUses,
+      events,
+      rawText: value
+    })
   };
 }
 
 function emptyPreview(rawText: string | null): ResponseStreamPreview {
   return {
     stream: false,
-    assistantText: "",
+    assistantText: rawText ?? "",
     thinkingText: "",
     toolUses: [],
     usage: { inputTokens: null, outputTokens: null },
     events: [],
-    rawText
+    rawText,
+    layers: buildLayers({
+      assistantText: rawText ?? "",
+      thinkingText: "",
+      toolUses: [],
+      events: [],
+      rawText
+    })
+  };
+}
+
+function buildLayers(input: {
+  assistantText: string;
+  thinkingText: string;
+  toolUses: ResponseStreamToolUse[];
+  events: ResponseStreamEvent[];
+  rawText: string | null;
+}): ResponsePreviewLayers {
+  return {
+    finalText: {
+      title: "Final text",
+      text: input.assistantText,
+      chars: input.assistantText.length
+    },
+    thinking: {
+      title: "Thinking",
+      text: input.thinkingText,
+      chars: input.thinkingText.length
+    },
+    toolUses: input.toolUses.map((tool) => ({
+      ...tool,
+      title: `Tool use: ${tool.name ?? "unknown tool"}`
+    })),
+    rawEvents: {
+      title: "Raw events",
+      eventCount: input.events.length,
+      events: input.events
+    },
+    rawStream: {
+      title: "Raw stream",
+      text: input.rawText,
+      chars: input.rawText?.length ?? 0
+    }
   };
 }
 

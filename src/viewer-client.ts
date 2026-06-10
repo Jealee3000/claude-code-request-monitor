@@ -1037,36 +1037,78 @@ export function renderViewerClientScript(repoRoot: string): string {
     }
 
     function renderResponsePreview(preview) {
-      if (!preview || !preview.stream) {
-        return '<div class="panel"><div class="panel-title">Response body</div>' +
-          renderJsonTree(payloadValue('responseBodyJson'), 'response') +
-          '</div>';
+      if (!preview) {
+        return '<div class="empty">No captured response body.</div>';
       }
 
-      const thinking = preview.thinkingText
-        ? '<div class="panel"><div class="panel-title">Thinking</div><pre class="raw">' + escapeHtml(preview.thinkingText) + '</pre></div>'
+      const layers = preview.layers || fallbackResponseLayers(preview);
+      if (!preview.stream) {
+        return '<div class="panel"><div class="panel-title">Response body</div>' +
+          '<pre class="raw">' + escapeHtml(layers.finalText.text || preview.rawText || 'none') + '</pre>' +
+          '</div>' +
+          renderResponseLayerDetails(layers);
+      }
+
+      const thinking = layers.thinking.text
+        ? '<div class="panel"><div class="panel-title">Thinking</div><pre class="raw">' + escapeHtml(layers.thinking.text) + '</pre></div>'
         : '';
       return '<div class="metric-grid">' +
         metric('Response Preview', 'stream') +
-        metric('Events', preview.events.length) +
+        metric('Events', layers.rawEvents.eventCount) +
         metric('Input tokens', preview.usage.inputTokens ?? 'unknown') +
         metric('Output tokens', preview.usage.outputTokens ?? 'unknown') +
-        metric('Tool uses', preview.toolUses.length) +
+        metric('Tool uses', layers.toolUses.length) +
         '</div>' +
-        '<div class="panel"><div class="panel-title">Assistant text</div><pre class="raw">' +
-        escapeHtml(preview.assistantText || 'none') +
+        '<div class="panel"><div class="panel-title">Readable response</div>' +
+        '<div class="secondary">' + escapeHtml(layers.finalText.title + ' - ' + layers.finalText.chars + ' chars') + '</div>' +
+        '<pre class="raw">' +
+        escapeHtml(layers.finalText.text || 'none') +
         '</pre></div>' +
         thinking +
-        '<div class="panel"><div class="panel-title">Tool uses</div>' + renderToolUsePreview(preview.toolUses) + '</div>' +
-        '<div class="panel"><div class="panel-title">Events</div>' + renderJsonTree(preview.events, 'events') + '</div>' +
-        '<div class="panel"><div class="panel-title">Raw stream</div><pre class="raw">' + escapeHtml(preview.rawText || '') + '</pre></div>';
+        '<div class="panel"><div class="panel-title">Tool use</div>' + renderToolUsePreview(layers.toolUses) + '</div>' +
+        renderResponseLayerDetails(layers);
+    }
+
+    function fallbackResponseLayers(preview) {
+      return {
+        finalText: {
+          title: 'Final text',
+          text: preview.assistantText || preview.rawText || '',
+          chars: (preview.assistantText || preview.rawText || '').length
+        },
+        thinking: {
+          title: 'Thinking',
+          text: preview.thinkingText || '',
+          chars: (preview.thinkingText || '').length
+        },
+        toolUses: preview.toolUses || [],
+        rawEvents: {
+          title: 'Raw events',
+          eventCount: (preview.events || []).length,
+          events: preview.events || []
+        },
+        rawStream: {
+          title: 'Raw stream',
+          text: preview.rawText || '',
+          chars: (preview.rawText || '').length
+        }
+      };
+    }
+
+    function renderResponseLayerDetails(layers) {
+      return '<details class="panel response-raw"><summary>Raw events (' + escapeHtml(layers.rawEvents.eventCount) + ')</summary>' +
+        renderJsonTree(layers.rawEvents.events, 'events') +
+        '</details>' +
+        '<details class="panel response-raw"><summary>Raw stream (' + escapeHtml(layers.rawStream.chars) + ' chars)</summary><pre class="raw">' +
+        escapeHtml(layers.rawStream.text || '') +
+        '</pre></details>';
     }
 
     function renderToolUsePreview(toolUses) {
       if (!toolUses || !toolUses.length) return '<span class="secondary">none</span>';
       return toolUses.map((tool) => {
         return '<div class="row">' +
-          '<div class="primary">' + escapeHtml((tool.name || 'unknown tool') + ' #' + tool.index) + '</div>' +
+          '<div class="primary">' + escapeHtml((tool.title || tool.name || 'unknown tool') + ' #' + tool.index) + '</div>' +
           '<div class="secondary">' + escapeHtml(tool.id || 'no id') + '</div>' +
           '<pre class="raw">' + escapeHtml(tool.inputJson || '{}') + '</pre>' +
           '</div>';

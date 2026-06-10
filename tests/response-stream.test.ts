@@ -49,6 +49,34 @@ describe("response stream preview", () => {
     expect(preview.usage).toEqual({ inputTokens: 11, outputTokens: 22 });
     expect(preview.events).toHaveLength(9);
     expect(preview.events[0]).toMatchObject({ event: "message_start", type: "message_start" });
+    expect(preview.layers).toMatchObject({
+      finalText: {
+        title: "Final text",
+        text: "Hello there",
+        chars: 11
+      },
+      thinking: {
+        title: "Thinking",
+        text: "",
+        chars: 0
+      },
+      toolUses: [
+        {
+          title: "Tool use: Read",
+          id: "toolu_1",
+          name: "Read",
+          inputJson: '{"file_path":"src/viewer.ts"}'
+        }
+      ],
+      rawEvents: {
+        title: "Raw events",
+        eventCount: 9
+      },
+      rawStream: {
+        title: "Raw stream",
+        chars: streamBody.length
+      }
+    });
   });
 
   it("assembles thinking deltas", () => {
@@ -63,6 +91,8 @@ describe("response stream preview", () => {
 
     expect(preview.stream).toBe(true);
     expect(preview.thinkingText).toBe("Consider tools");
+    expect(preview.layers.thinking.text).toBe("Consider tools");
+    expect(preview.layers.thinking.chars).toBe(14);
   });
 
   it("returns a non-stream preview for plain text", () => {
@@ -71,6 +101,8 @@ describe("response stream preview", () => {
     expect(preview.stream).toBe(false);
     expect(preview.rawText).toBe("plain response");
     expect(preview.events).toEqual([]);
+    expect(preview.layers.finalText.text).toBe("plain response");
+    expect(preview.layers.rawEvents.eventCount).toBe(0);
   });
 
   it("parses stored request detail response body json", () => {
