@@ -194,6 +194,25 @@ describe("viewer", () => {
     ]);
   });
 
+  it("searches agent requests in a session", async () => {
+    const response = await app.inject({ method: "GET", url: "/api/sessions/session-a/search?q=viewer&tool=Read" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      query: "viewer",
+      tool: "read",
+      total: 1,
+      results: [
+        {
+          latestUserText: "next question",
+          toolNames: ["Read", "Edit"],
+          suspectedSkillNames: ["browser:control-in-app-browser"],
+          matchedFields: expect.arrayContaining(["tool-filter", "tool-input"])
+        }
+      ]
+    });
+  });
+
   it("returns context diff for a request", async () => {
     const requests = store.listRequests("session-a");
     const response = await app.inject({ method: "GET", url: `/api/requests/${requests[0].id}/context-diff` });
@@ -397,6 +416,10 @@ describe("viewer", () => {
     expect(response.body).toContain('data-left-tab="claude"');
     expect(response.body).toContain("setLeftTab");
     expect(response.body).toContain("Refresh");
+    expect(response.body).toContain("Agent search");
+    expect(response.body).toContain("requestSearchResults");
+    expect(response.body).toContain("searchRequests");
+    expect(response.body).toContain("renderSearchResults");
     expect(response.body).toContain("setInterval");
     expect(response.body).toContain("refreshRequests");
     expect(response.body).toContain("copyCommand");

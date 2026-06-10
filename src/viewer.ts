@@ -6,6 +6,7 @@ import { buildContextDiff } from "./context-diff.js";
 import { buildDiagnostics } from "./diagnostics.js";
 import { buildAgentInsight } from "./agent-insight.js";
 import { parseResponsePreviewFromDetail } from "./response-stream.js";
+import { buildRequestSearch } from "./request-search.js";
 import { buildSystemPromptPreview } from "./system-prompt.js";
 import { buildTurnDetail } from "./turn-detail.js";
 import { buildTurnTimeline } from "./turn-timeline.js";
@@ -59,6 +60,18 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
   app.get<{ Params: { id: string } }>("/api/sessions/:id/turns", async (request) => {
     return buildTurnTimeline(store.listRequestDetails(request.params.id));
   });
+
+  app.get<{ Params: { id: string }; Querystring: { q?: string; tool?: string; skill?: string; limit?: string } }>(
+    "/api/sessions/:id/search",
+    async (request) => {
+      return buildRequestSearch(store.listRequestDetails(request.params.id), {
+        query: request.query.q,
+        tool: request.query.tool,
+        skill: request.query.skill,
+        limit: request.query.limit ? Number(request.query.limit) : null
+      });
+    }
+  );
 
   app.get<{ Params: { id: string } }>("/api/requests/:id/context-diff", async (request, reply) => {
     const requestId = Number(request.params.id);
@@ -268,6 +281,15 @@ function renderHtml(repoRoot: string): string {
     }
     button.small:hover { background: var(--subtle); }
     .session-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .request-search {
+      position: sticky;
+      top: 41px;
+      z-index: 2;
+      padding: 8px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+    .filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
     .issue { border-left: 3px solid var(--warn); padding-left: 8px; }
     .issue.bad { border-left-color: var(--bad); }
     .primary { font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
@@ -403,6 +425,13 @@ function renderHtml(repoRoot: string): string {
         <span>Requests</span>
         <button id="refresh-requests" class="small" type="button">Refresh</button>
       </div>
+      <div class="request-search">
+        <input id="request-search" placeholder="Agent search" autocomplete="off">
+        <div class="filter-row">
+          <input id="request-tool-filter" placeholder="Tool filter" autocomplete="off">
+          <input id="request-skill-filter" placeholder="Skill filter" autocomplete="off">
+        </div>
+      </div>
       <div id="requests" class="empty">Select a session</div>
     </section>
     <section>
@@ -435,6 +464,7 @@ function renderHtml(repoRoot: string): string {
       claudeSessions: [],
       diagnostics: null,
       requests: [],
+      requestSearchResults: null,
       timeline: [],
       detail: null,
       contextDiff: null,
@@ -455,8 +485,15 @@ function renderHtml(repoRoot: string): string {
     const requestsEl = document.getElementById('requests');
     const detailEl = document.getElementById('detail');
     const searchEl = document.getElementById('search');
+    const requestSearchEl = document.getElementById('request-search');
+    const requestToolFilterEl = document.getElementById('request-tool-filter');
+    const requestSkillFilterEl = document.getElementById('request-skill-filter');
+    let requestSearchTimer = null;
 
     searchEl.addEventListener('input', renderDetail);
+    requestSearchEl.addEventListener('input', scheduleSearchRequests);
+    requestToolFilterEl.addEventListener('input', scheduleSearchRequests);
+    requestSkillFilterEl.addEventListener('input', scheduleSearchRequests);
     document.getElementById('refresh-requests').addEventListener('click', () => refreshRequests().catch(showRequestError));
     document.querySelectorAll('[data-left-tab]').forEach((button) => {
       button.addEventListener('click', () => setLeftTab(button.dataset.leftTab));
@@ -502,6 +539,7 @@ function renderHtml(repoRoot: string): string {
     async function selectSession(id) {
       state.selectedSession = id;
       state.selectedRequest = null;
+      state.requestSearchResults = null;
       state.detail = null;
       state.contextDiff = null;
       state.responsePreview = null;
@@ -521,6 +559,11 @@ function renderHtml(repoRoot: string): string {
       try {
         const previousRequest = state.selectedRequest;
         state.requests = await fetchJson('/api/sessions/' + encodeURIComponent(state.selectedSession) + '/requests');
+        if (hasRequestSearch()) {
+          await searchRequests();
+        } else {
+          state.requestSearchResults = null;
+        }
         if (options.resetSelection) {
           state.selectedRequest = null;
         } else if (previousRequest && !state.requests.some((request) => request.id === previousRequest)) {
@@ -547,6 +590,36 @@ function renderHtml(repoRoot: string): string {
         return;
       }
       state.timeline = await fetchJson('/api/sessions/' + encodeURIComponent(state.selectedSession) + '/turns');
+    }
+
+    function scheduleSearchRequests() {
+      if (requestSearchTimer) clearTimeout(requestSearchTimer);
+      requestSearchTimer = setTimeout(() => {
+        searchRequests().catch(showRequestError);
+      }, 180);
+    }
+
+    async function searchRequests() {
+      if (!state.selectedSession) return;
+      if (!hasRequestSearch()) {
+        state.requestSearchResults = null;
+        renderRequests();
+        return;
+      }
+      const params = new URLSearchParams();
+      if (requestSearchEl.value.trim()) params.set('q', requestSearchEl.value.trim());
+      if (requestToolFilterEl.value.trim()) params.set('tool', requestToolFilterEl.value.trim());
+      if (requestSkillFilterEl.value.trim()) params.set('skill', requestSkillFilterEl.value.trim());
+      state.requestSearchResults = await fetchJson('/api/sessions/' + encodeURIComponent(state.selectedSession) + '/search?' + params.toString());
+      renderRequests();
+    }
+
+    function hasRequestSearch() {
+      return Boolean(
+        requestSearchEl.value.trim() ||
+        requestToolFilterEl.value.trim() ||
+        requestSkillFilterEl.value.trim()
+      );
     }
 
     async function selectRequest(id, nextTab) {
@@ -625,6 +698,10 @@ function renderHtml(repoRoot: string): string {
     }
 
     function renderRequests() {
+      if (state.requestSearchResults) {
+        renderSearchResults();
+        return;
+      }
       if (!state.requests.length) {
         requestsEl.className = 'empty';
         requestsEl.textContent = state.selectedSession ? 'No requests captured yet' : 'Select a session';
@@ -637,6 +714,26 @@ function renderHtml(repoRoot: string): string {
         primary: request.method + ' ' + request.host,
         secondary: request.path + ' - ' + (request.statusCode ?? 'pending') + ' - ' + (request.durationMs ?? 0) + 'ms'
       })).join('');
+    }
+
+    function renderSearchResults() {
+      const search = state.requestSearchResults;
+      if (!search || !search.results.length) {
+        requestsEl.className = 'empty';
+        requestsEl.textContent = state.selectedSession ? 'No matching agent requests' : 'Select a session';
+        return;
+      }
+      requestsEl.className = '';
+      requestsEl.innerHTML =
+        '<div class="section-title">Search results: ' + escapeHtml(search.total) + '</div>' +
+        search.results.map((result) => row({
+          active: result.requestId === state.selectedRequest,
+          onclick: 'selectRequest(' + result.requestId + ', \\'insight\\')',
+          primary: result.latestUserText || 'No user text',
+          secondary: result.startedAt + ' - ' + (result.model || 'unknown model') +
+            ' - tools: ' + (result.toolNames.join(', ') || 'none') +
+            ' - matched: ' + (result.matchedFields.join(', ') || 'recent')
+        })).join('');
     }
 
     function renderDiagnostics() {
