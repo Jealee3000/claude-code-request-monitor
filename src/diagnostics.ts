@@ -17,6 +17,8 @@ export interface SessionDiagnosticCheck {
   inspectBody: boolean;
   watchTokenPresent: boolean;
   requestCount: number;
+  payloadCount: number;
+  connectRequestCount: number;
   lastRequestAt: string | null;
   status: SessionDiagnosticStatus;
   summary: string;
@@ -54,12 +56,14 @@ export function buildDiagnostics(stats: SessionRequestStats[]): CaptureDiagnosti
     }));
 
   for (const session of active) {
-    if (!session.inspectBody) {
+    if (!session.inspectBody || session.payloadCount === 0) {
       issues.push({
-        severity: "info",
-        code: "inspect-body-disabled",
+        severity: session.inspectBody ? "warn" : "info",
+        code: session.inspectBody ? "inspect-body-no-payloads" : "inspect-body-disabled",
         sessionId: session.sessionId,
-        message: "Requests are being captured, but inspect-body is disabled. Agent context, tools, skills, and response previews need --inspect-body."
+        message: session.inspectBody
+          ? "Only tunnel metadata was captured. If the request list shows CONNECT rows only, the running service is not intercepting HTTPS bodies; restart the long-lived watcher with --inspect-body."
+          : "Requests are being captured, but inspect-body is disabled. Agent context, tools, skills, and response previews need --inspect-body."
       });
     }
   }
@@ -84,7 +88,7 @@ export function buildDiagnostics(stats: SessionRequestStats[]): CaptureDiagnosti
 
 function buildSessionCheck(session: SessionRequestStats): SessionDiagnosticCheck {
   const status = session.requestCount > 0
-    ? session.inspectBody ? "capturing" : "metadata_only"
+    ? session.inspectBody && session.payloadCount > 0 ? "capturing" : "metadata_only"
     : session.watchTokenPresent ? "waiting" : "not_routable";
 
   return {
@@ -95,6 +99,8 @@ function buildSessionCheck(session: SessionRequestStats): SessionDiagnosticCheck
     inspectBody: session.inspectBody,
     watchTokenPresent: Boolean(session.watchTokenPresent),
     requestCount: session.requestCount,
+    payloadCount: session.payloadCount,
+    connectRequestCount: session.connectRequestCount,
     lastRequestAt: session.lastRequestAt,
     status,
     summary: buildSummary(session, status),
@@ -118,6 +124,9 @@ function buildSummary(session: SessionRequestStats, status: SessionDiagnosticSta
     return `Captured ${session.requestCount} request(s). Latest request: ${session.lastRequestAt ?? "unknown"}.`;
   }
   if (status === "metadata_only") {
+    if (session.connectRequestCount === session.requestCount) {
+      return `Captured ${session.requestCount} CONNECT tunnel(s), but request/response bodies are not available.`;
+    }
     return `Captured ${session.requestCount} request(s), but request/response bodies are not available.`;
   }
   if (status === "waiting") {
@@ -132,7 +141,8 @@ function buildHints(session: SessionRequestStats, status: SessionDiagnosticStatu
   }
   if (status === "metadata_only") {
     return [
-      "Restart the watcher with --inspect-body to inspect context, tools, skills, and response streams.",
+      "Restart the long-lived watcher service with --inspect-body to inspect context, tools, skills, and response streams.",
+      "If you use multi-session mode, start the service with: npm.cmd run watch -- server --inspect-body",
       "Existing metadata remains useful for timing and endpoint checks."
     ];
   }

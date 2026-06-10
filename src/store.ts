@@ -66,6 +66,8 @@ interface SessionRequestStatsRow {
   watch_token: string | null;
   claude_session_id: string | null;
   request_count: number;
+  payload_count: number;
+  connect_request_count: number;
   last_request_at: string | null;
 }
 
@@ -361,9 +363,12 @@ export class RequestStore {
           s.watch_token,
           s.claude_session_id,
           COUNT(r.id) AS request_count,
+          COUNT(p.request_id) AS payload_count,
+          COALESCE(SUM(CASE WHEN r.method = 'CONNECT' THEN 1 ELSE 0 END), 0) AS connect_request_count,
           MAX(r.started_at) AS last_request_at
         FROM sessions s
         LEFT JOIN requests r ON r.session_id = s.id
+        LEFT JOIN payloads p ON p.request_id = r.id
         GROUP BY s.id
         ORDER BY s.started_at DESC`
       )
@@ -377,6 +382,8 @@ export class RequestStore {
       watchTokenPresent: Boolean(row.watch_token),
       claudeSessionId: row.claude_session_id,
       requestCount: row.request_count,
+      payloadCount: row.payload_count,
+      connectRequestCount: row.connect_request_count,
       lastRequestAt: row.last_request_at
     }));
   }

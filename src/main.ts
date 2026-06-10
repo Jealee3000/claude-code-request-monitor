@@ -23,7 +23,7 @@ async function main(): Promise<void> {
   }
 
   const proxy = await startProxyServer(config, store);
-  const viewer = buildViewerServer(store);
+  const viewer = buildViewerServer(store, { inspectBody: config.inspectBody });
   await viewer.listen({ host: config.host, port: config.viewerPort });
 
   console.log(`Claude Watch viewer: http://${config.host}:${config.viewerPort}`);

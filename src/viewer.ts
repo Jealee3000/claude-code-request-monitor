@@ -21,6 +21,7 @@ import type { RequestDetail, TurnAnnotation } from "./types.js";
 export interface ViewerOptions {
   claudeHome?: string;
   repoRoot?: string;
+  inspectBody?: boolean;
 }
 
 interface CreateWatchSessionBody {
@@ -40,6 +41,7 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
   const app = Fastify({ logger: false });
   const claudeHome = options.claudeHome ?? defaultClaudeHome();
   const repoRoot = options.repoRoot ?? process.cwd();
+  const serverInspectBody = options.inspectBody;
 
   app.get("/healthz", async () => ({ ok: true }));
 
@@ -60,7 +62,7 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
     return store.createSession({
       id: request.body.id ?? createSessionId(),
       projectPath,
-      inspectBody: Boolean(request.body.inspectBody),
+      inspectBody: serverInspectBody ?? Boolean(request.body.inspectBody),
       claudeSessionId: request.body.claudeSessionId ?? null,
       watchToken: randomBytes(18).toString("base64url")
     });

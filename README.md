@@ -113,6 +113,8 @@ In inspect mode, the local proxy performs HTTPS MITM only for the Claude Code ch
 
 These environment variables are restored after Claude exits. The tool does not change the Windows system proxy or system certificate store.
 
+If the Requests list only shows `CONNECT api.anthropic.com:443` rows, the proxy is receiving Claude traffic but the running service is not intercepting HTTPS bodies. Stop the old service and restart the long-lived watcher with `--inspect-body` or use `-InspectBody -RestartWatcher` from the PowerShell wrapper.
+
 ## Viewer
 
 The browser UI shows:

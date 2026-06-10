@@ -511,6 +511,24 @@ describe("viewer", () => {
     });
   });
 
+  it("uses the server inspect-body mode when creating watch sessions", async () => {
+    const metadataOnlyApp = buildViewerServer(store, { inspectBody: false });
+    const response = await metadataOnlyApp.inject({
+      method: "POST",
+      url: "/api/watch-sessions",
+      payload: {
+        projectPath: "D:\\code\\metadata-only",
+        inspectBody: true
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      projectPath: "D:\\code\\metadata-only",
+      inspectBody: false
+    });
+  });
+
   it("returns local Claude sessions", async () => {
     const response = await app.inject({ method: "GET", url: "/api/claude-sessions" });
 

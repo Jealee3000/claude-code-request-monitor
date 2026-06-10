@@ -90,7 +90,7 @@ async function startServer(argv: string[]): Promise<void> {
   }
 
   const proxy = await startProxyServer(config, store);
-  const viewer = buildViewerServer(store, { repoRoot: process.cwd() });
+  const viewer = buildViewerServer(store, { repoRoot: process.cwd(), inspectBody: config.inspectBody });
   await viewer.listen({ host: config.host, port: config.viewerPort });
 
   console.log(`Claude Watch viewer: http://${config.host}:${config.viewerPort}`);
@@ -136,7 +136,7 @@ async function runClaude(options: RunOptions): Promise<void> {
       HTTP_PROXY: proxyUrl,
       HTTPS_PROXY: proxyUrl,
       CLAUDE_WATCH_SESSION_ID: session.id,
-      ...(options.inspectBody ? { NODE_EXTRA_CA_CERTS: caPath } : {})
+      ...(session.inspectBody ? { NODE_EXTRA_CA_CERTS: caPath } : {})
     }
   });
 
@@ -163,7 +163,7 @@ function buildClaudeArgs(options: RunOptions): string[] {
   return args.concat(options.claudeArgs);
 }
 
-async function createWatchSession(viewerUrl: string, options: RunOptions): Promise<{ id: string; watchToken: string }> {
+async function createWatchSession(viewerUrl: string, options: RunOptions): Promise<{ id: string; watchToken: string; inspectBody: boolean }> {
   const response = await fetch(`${viewerUrl}/api/watch-sessions`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -178,10 +178,15 @@ async function createWatchSession(viewerUrl: string, options: RunOptions): Promi
     throw new Error(`Failed to register watch session at ${viewerUrl}: ${await response.text()}`);
   }
 
-  const body = (await response.json()) as { id?: unknown; watchToken?: unknown };
+  const body = (await response.json()) as { id?: unknown; watchToken?: unknown; inspectBody?: unknown };
   if (typeof body.id !== "string" || typeof body.watchToken !== "string") {
     throw new Error("Watch service returned an invalid session registration response");
   }
 
-  return { id: body.id, watchToken: body.watchToken };
+  const inspectBody = typeof body.inspectBody === "boolean" ? body.inspectBody : options.inspectBody;
+  if (options.inspectBody && !inspectBody) {
+    console.warn("Claude Watch service is running without --inspect-body; only CONNECT tunnel metadata will be captured.");
+  }
+
+  return { id: body.id, watchToken: body.watchToken, inspectBody };
 }

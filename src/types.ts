@@ -92,6 +92,8 @@ export interface SessionRequestStats {
   watchTokenPresent: boolean;
   claudeSessionId: string | null;
   requestCount: number;
+  payloadCount: number;
+  connectRequestCount: number;
   lastRequestAt: string | null;
 }
 
