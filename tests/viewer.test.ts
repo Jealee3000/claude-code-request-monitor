@@ -300,6 +300,32 @@ describe("viewer", () => {
     });
   });
 
+  it("returns agent insight for a request", async () => {
+    const requests = store.listRequests("session-a");
+    const response = await app.inject({ method: "GET", url: `/api/requests/${requests[0].id}/agent-insight` });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      latestUserText: "next question",
+      requestCount: 1,
+      headline: expect.stringContaining("1 requests"),
+      metrics: {
+        toolUseCount: 1,
+        toolResultCount: 0,
+        toolCount: 2,
+        suspectedSkillCount: 1,
+        finalAssistantPreview: "I will inspect "
+      },
+      insights: expect.arrayContaining([
+        expect.objectContaining({ kind: "context" }),
+        expect.objectContaining({ kind: "risk", title: "Tool request has no captured result yet" }),
+        expect.objectContaining({ kind: "skills" }),
+        expect.objectContaining({ kind: "tools" }),
+        expect.objectContaining({ kind: "response" })
+      ])
+    });
+  });
+
   it("returns capture diagnostics", async () => {
     const response = await app.inject({ method: "GET", url: "/api/diagnostics" });
 
@@ -352,6 +378,7 @@ describe("viewer", () => {
     expect(response.headers["content-type"]).toContain("text/html");
     expect(response.body).toContain("claude-watch-root");
     expect(response.body).toContain("Overview");
+    expect(response.body).toContain("Insight");
     expect(response.body).toContain("Replay");
     expect(response.body).toContain("Timeline");
     expect(response.body).toContain("Turn");
@@ -386,5 +413,7 @@ describe("viewer", () => {
     expect(response.body).toContain("renderSystemPrompt");
     expect(response.body).toContain("turnReplay");
     expect(response.body).toContain("renderTurnReplay");
+    expect(response.body).toContain("agentInsight");
+    expect(response.body).toContain("renderAgentInsight");
   });
 });

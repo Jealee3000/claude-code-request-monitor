@@ -120,6 +120,7 @@ The browser UI shows:
 - Sessions
 - Local Claude sessions with copyable resume commands
 - Request timeline
+- Agent Insight turn summaries
 - Auto-refreshing request list with a manual Refresh button
 - Request detail
 - Redacted JSON payloads when inspect mode is enabled

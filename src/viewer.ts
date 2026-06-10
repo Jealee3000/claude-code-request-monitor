@@ -4,6 +4,7 @@ import { createSessionId } from "./config.js";
 import { defaultClaudeHome, listLocalClaudeSessions } from "./claude-sessions.js";
 import { buildContextDiff } from "./context-diff.js";
 import { buildDiagnostics } from "./diagnostics.js";
+import { buildAgentInsight } from "./agent-insight.js";
 import { parseResponsePreviewFromDetail } from "./response-stream.js";
 import { buildSystemPromptPreview } from "./system-prompt.js";
 import { buildTurnDetail } from "./turn-detail.js";
@@ -110,6 +111,17 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
     }
 
     return buildTurnReplay(store.listRequestDetails(detail.sessionId), requestId);
+  });
+
+  app.get<{ Params: { id: string } }>("/api/requests/:id/agent-insight", async (request, reply) => {
+    const requestId = Number(request.params.id);
+    const detail = Number.isFinite(requestId) ? store.getRequestDetail(requestId) : undefined;
+
+    if (!detail) {
+      return reply.code(404).send({ error: "Request not found" });
+    }
+
+    return buildAgentInsight(store.listRequestDetails(detail.sessionId), requestId);
   });
 
   app.get<{ Params: { id: string } }>("/api/requests/:id", async (request, reply) => {
@@ -400,6 +412,7 @@ function renderHtml(repoRoot: string): string {
         </div>
         <div class="tabs" role="tablist">
           <button class="tab active" data-tab="overview" type="button">Overview</button>
+          <button class="tab" data-tab="insight" type="button">Insight</button>
           <button class="tab" data-tab="replay" type="button">Replay</button>
           <button class="tab" data-tab="timeline" type="button">Timeline</button>
           <button class="tab" data-tab="turn" type="button">Turn</button>
@@ -429,6 +442,7 @@ function renderHtml(repoRoot: string): string {
       turnDetail: null,
       systemPrompt: null,
       turnReplay: null,
+      agentInsight: null,
       selectedSession: null,
       selectedRequest: null,
       tab: 'overview',
@@ -494,6 +508,7 @@ function renderHtml(repoRoot: string): string {
       state.turnDetail = null;
       state.systemPrompt = null;
       state.turnReplay = null;
+      state.agentInsight = null;
       await refreshRequests({ resetSelection: true });
       await loadTimeline();
       renderSessions();
@@ -516,6 +531,7 @@ function renderHtml(repoRoot: string): string {
           state.turnDetail = null;
           state.systemPrompt = null;
           state.turnReplay = null;
+          state.agentInsight = null;
           renderDetail();
         }
         renderRequests();
@@ -536,13 +552,14 @@ function renderHtml(repoRoot: string): string {
     async function selectRequest(id, nextTab) {
       state.selectedRequest = id;
       const encodedId = encodeURIComponent(id);
-      const [detail, contextDiff, responsePreview, turnDetail, systemPrompt, turnReplay] = await Promise.all([
+      const [detail, contextDiff, responsePreview, turnDetail, systemPrompt, turnReplay, agentInsight] = await Promise.all([
         fetchJson('/api/requests/' + encodedId),
         fetchJson('/api/requests/' + encodedId + '/context-diff'),
         fetchJson('/api/requests/' + encodedId + '/response-preview'),
         fetchJson('/api/requests/' + encodedId + '/turn-detail'),
         fetchJson('/api/requests/' + encodedId + '/system-prompt'),
-        fetchJson('/api/requests/' + encodedId + '/turn-replay')
+        fetchJson('/api/requests/' + encodedId + '/turn-replay'),
+        fetchJson('/api/requests/' + encodedId + '/agent-insight')
       ]);
       state.detail = detail;
       state.contextDiff = contextDiff;
@@ -550,6 +567,7 @@ function renderHtml(repoRoot: string): string {
       state.turnDetail = turnDetail;
       state.systemPrompt = systemPrompt;
       state.turnReplay = turnReplay;
+      state.agentInsight = agentInsight;
       if (nextTab) {
         state.tab = nextTab;
         syncDetailTabs();
@@ -678,6 +696,7 @@ function renderHtml(repoRoot: string): string {
       detailEl.className = '';
       const htmlByTab = {
         overview: renderOverview,
+        insight: renderAgentInsight,
         replay: renderTurnReplay,
         timeline: renderTimeline,
         turn: renderTurnDetail,
@@ -725,6 +744,40 @@ function renderHtml(repoRoot: string): string {
           '<div class="secondary">Context chars: ' + escapeHtml(turn.maxContextChars) + ' - tool_use/results: ' + escapeHtml(turn.toolUseCount + ' / ' + turn.toolResultCount) + '</div>' +
           '</button>';
       }).join('');
+    }
+
+    function renderAgentInsight() {
+      const insight = state.agentInsight;
+      if (!insight) {
+        return '<div class="empty">Select an agent request to summarize its behavior.</div>';
+      }
+      return '<div class="panel"><div class="panel-title">Headline</div><div class="primary">' +
+        escapeHtml(insight.headline) +
+        '</div><div class="secondary">' + escapeHtml(insight.latestUserText || 'No user prompt detected') + '</div></div>' +
+        '<div class="metric-grid">' +
+        metric('Requests', insight.requestCount) +
+        metric('Model', insight.metrics.model ?? 'unknown') +
+        metric('Max context', insight.metrics.maxContextChars) +
+        metric('Context delta', signed(insight.metrics.totalContextDelta)) +
+        metric('Tools', insight.metrics.toolCount) +
+        metric('Skills', insight.metrics.suspectedSkillCount) +
+        metric('Tool uses/results', insight.metrics.toolUseCount + ' / ' + insight.metrics.toolResultCount) +
+        metric('Tool schema chars', insight.metrics.toolSchemaChars) +
+        '</div>' +
+        '<div class="panel"><div class="panel-title">Agent Insights</div>' + renderInsightItems(insight.insights) + '</div>' +
+        '<div class="panel"><div class="panel-title">Final assistant preview</div><pre class="raw">' +
+        escapeHtml(insight.metrics.finalAssistantPreview || 'none') +
+        '</pre></div>';
+    }
+
+    function renderInsightItems(items) {
+      if (!items || !items.length) return '<span class="secondary">none</span>';
+      return items.map((item) => '<div class="row issue ' + escapeHtml(item.severity === 'error' ? 'bad' : item.severity === 'warning' ? 'warning' : '') + '">' +
+        '<div class="primary">' + escapeHtml(item.title) + '</div>' +
+        '<div class="secondary">' + escapeHtml(item.kind + (item.requestId ? ' - request ' + item.requestId : '')) + '</div>' +
+        '<div class="secondary">' + escapeHtml(item.detail) + '</div>' +
+        '<div class="secondary">' + renderJsonTree(item.values || {}, 'values') + '</div>' +
+        '</div>').join('');
     }
 
     function renderTurnReplay() {
