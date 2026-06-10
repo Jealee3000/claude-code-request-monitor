@@ -279,6 +279,27 @@ describe("viewer", () => {
     });
   });
 
+  it("returns turn replay for a request", async () => {
+    const requests = store.listRequests("session-a");
+    const response = await app.inject({ method: "GET", url: `/api/requests/${requests[0].id}/turn-replay` });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      latestUserText: "next question",
+      requestCount: 1,
+      summary: {
+        toolUseCount: 1,
+        toolResultCount: 0
+      },
+      events: [
+        { kind: "user_prompt", title: "User prompt" },
+        { kind: "request_context", requestId: requests[0].id },
+        { kind: "assistant_response", requestId: requests[0].id },
+        { kind: "tool_use", requestId: requests[0].id, title: "Tool requested: Read" }
+      ]
+    });
+  });
+
   it("returns capture diagnostics", async () => {
     const response = await app.inject({ method: "GET", url: "/api/diagnostics" });
 
@@ -331,6 +352,7 @@ describe("viewer", () => {
     expect(response.headers["content-type"]).toContain("text/html");
     expect(response.body).toContain("claude-watch-root");
     expect(response.body).toContain("Overview");
+    expect(response.body).toContain("Replay");
     expect(response.body).toContain("Timeline");
     expect(response.body).toContain("Turn");
     expect(response.body).toContain("Diff");
@@ -362,5 +384,7 @@ describe("viewer", () => {
     expect(response.body).toContain("renderToolLoops");
     expect(response.body).toContain("systemPrompt");
     expect(response.body).toContain("renderSystemPrompt");
+    expect(response.body).toContain("turnReplay");
+    expect(response.body).toContain("renderTurnReplay");
   });
 });

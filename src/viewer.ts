@@ -8,6 +8,7 @@ import { parseResponsePreviewFromDetail } from "./response-stream.js";
 import { buildSystemPromptPreview } from "./system-prompt.js";
 import { buildTurnDetail } from "./turn-detail.js";
 import { buildTurnTimeline } from "./turn-timeline.js";
+import { buildTurnReplay } from "./turn-replay.js";
 import type { RequestStore } from "./store.js";
 
 export interface ViewerOptions {
@@ -98,6 +99,17 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
     }
 
     return buildSystemPromptPreview(detail);
+  });
+
+  app.get<{ Params: { id: string } }>("/api/requests/:id/turn-replay", async (request, reply) => {
+    const requestId = Number(request.params.id);
+    const detail = Number.isFinite(requestId) ? store.getRequestDetail(requestId) : undefined;
+
+    if (!detail) {
+      return reply.code(404).send({ error: "Request not found" });
+    }
+
+    return buildTurnReplay(store.listRequestDetails(detail.sessionId), requestId);
   });
 
   app.get<{ Params: { id: string } }>("/api/requests/:id", async (request, reply) => {
@@ -388,6 +400,7 @@ function renderHtml(repoRoot: string): string {
         </div>
         <div class="tabs" role="tablist">
           <button class="tab active" data-tab="overview" type="button">Overview</button>
+          <button class="tab" data-tab="replay" type="button">Replay</button>
           <button class="tab" data-tab="timeline" type="button">Timeline</button>
           <button class="tab" data-tab="turn" type="button">Turn</button>
           <button class="tab" data-tab="diff" type="button">Diff</button>
@@ -415,6 +428,7 @@ function renderHtml(repoRoot: string): string {
       responsePreview: null,
       turnDetail: null,
       systemPrompt: null,
+      turnReplay: null,
       selectedSession: null,
       selectedRequest: null,
       tab: 'overview',
@@ -479,6 +493,7 @@ function renderHtml(repoRoot: string): string {
       state.responsePreview = null;
       state.turnDetail = null;
       state.systemPrompt = null;
+      state.turnReplay = null;
       await refreshRequests({ resetSelection: true });
       await loadTimeline();
       renderSessions();
@@ -500,6 +515,7 @@ function renderHtml(repoRoot: string): string {
           state.responsePreview = null;
           state.turnDetail = null;
           state.systemPrompt = null;
+          state.turnReplay = null;
           renderDetail();
         }
         renderRequests();
@@ -520,18 +536,20 @@ function renderHtml(repoRoot: string): string {
     async function selectRequest(id, nextTab) {
       state.selectedRequest = id;
       const encodedId = encodeURIComponent(id);
-      const [detail, contextDiff, responsePreview, turnDetail, systemPrompt] = await Promise.all([
+      const [detail, contextDiff, responsePreview, turnDetail, systemPrompt, turnReplay] = await Promise.all([
         fetchJson('/api/requests/' + encodedId),
         fetchJson('/api/requests/' + encodedId + '/context-diff'),
         fetchJson('/api/requests/' + encodedId + '/response-preview'),
         fetchJson('/api/requests/' + encodedId + '/turn-detail'),
-        fetchJson('/api/requests/' + encodedId + '/system-prompt')
+        fetchJson('/api/requests/' + encodedId + '/system-prompt'),
+        fetchJson('/api/requests/' + encodedId + '/turn-replay')
       ]);
       state.detail = detail;
       state.contextDiff = contextDiff;
       state.responsePreview = responsePreview;
       state.turnDetail = turnDetail;
       state.systemPrompt = systemPrompt;
+      state.turnReplay = turnReplay;
       if (nextTab) {
         state.tab = nextTab;
         syncDetailTabs();
@@ -660,6 +678,7 @@ function renderHtml(repoRoot: string): string {
       detailEl.className = '';
       const htmlByTab = {
         overview: renderOverview,
+        replay: renderTurnReplay,
         timeline: renderTimeline,
         turn: renderTurnDetail,
         diff: renderContextDiff,
@@ -706,6 +725,36 @@ function renderHtml(repoRoot: string): string {
           '<div class="secondary">Context chars: ' + escapeHtml(turn.maxContextChars) + ' - tool_use/results: ' + escapeHtml(turn.toolUseCount + ' / ' + turn.toolResultCount) + '</div>' +
           '</button>';
       }).join('');
+    }
+
+    function renderTurnReplay() {
+      const replay = state.turnReplay;
+      if (!replay) {
+        return '<div class="empty">Select an agent request to replay its turn.</div>';
+      }
+      return '<div class="metric-grid">' +
+        metric('Replay events', replay.events.length) +
+        metric('Requests', replay.requestCount) +
+        metric('Tool uses', replay.summary.toolUseCount) +
+        metric('Tool results', replay.summary.toolResultCount) +
+        '</div>' +
+        '<div class="panel"><div class="panel-title">User prompt</div><pre class="raw">' +
+        escapeHtml(replay.latestUserText || 'none') +
+        '</pre></div>' +
+        '<div class="panel"><div class="panel-title">Replay</div>' + renderReplayEvents(replay.events) + '</div>';
+    }
+
+    function renderReplayEvents(events) {
+      if (!events || !events.length) return '<span class="secondary">none</span>';
+      return events.map((event, index) => '<div class="row">' +
+        '<div class="primary">' + escapeHtml(String(index + 1) + '. ' + event.title) + '</div>' +
+        '<div class="secondary">' + escapeHtml(event.kind + (event.requestId ? ' - request ' + event.requestId : '')) + '</div>' +
+        '<div class="secondary">' + escapeHtml(event.summary || '') + '</div>' +
+        '<div class="secondary">Context: ' + escapeHtml(event.contextChars ?? 'n/a') + ' (' + escapeHtml(event.contextDelta === null ? 'n/a' : signed(event.contextDelta)) + ') - Skills: ' + escapeHtml(event.suspectedSkillCount ?? 'n/a') + ' - Tools: ' + escapeHtml(event.toolCount ?? 'n/a') + '</div>' +
+        (event.preview ? '<pre class="raw">' + escapeHtml(event.preview) + '</pre>' : '') +
+        (event.inputJson ? '<div class="secondary">Input</div><pre class="raw">' + escapeHtml(event.inputJson) + '</pre>' : '') +
+        (event.resultChars === undefined ? '' : '<div class="secondary">Result chars: ' + escapeHtml(event.resultChars) + ' - Error: ' + escapeHtml(event.isError) + '</div>') +
+        '</div>').join('');
     }
 
     function renderTurnDetail() {
