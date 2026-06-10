@@ -9,6 +9,7 @@ import { buildAgentInsight } from "./agent-insight.js";
 import { parseResponsePreviewFromDetail } from "./response-stream.js";
 import { buildRequestSearch } from "./request-search.js";
 import { buildSystemPromptPreview } from "./system-prompt.js";
+import { buildSessionCompare } from "./session-compare.js";
 import { buildSessionExport } from "./session-export.js";
 import { buildTurnDetail } from "./turn-detail.js";
 import { buildTurnCompare } from "./turn-compare.js";
@@ -90,6 +91,28 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
       store.listTurnAnnotations(session.id)
     );
   });
+
+  app.get<{ Params: { id: string }; Querystring: { baselineSessionId?: string } }>(
+    "/api/sessions/:id/compare",
+    async (request, reply) => {
+      const sessions = store.listSessions();
+      const current = sessions.find((item) => item.id === request.params.id);
+      if (!current) {
+        return reply.code(404).send({ error: "Session not found" });
+      }
+
+      const baseline = request.query.baselineSessionId
+        ? sessions.find((item) => item.id === request.query.baselineSessionId) ?? null
+        : defaultBaselineSession(sessions, current);
+
+      return buildSessionCompare(
+        current,
+        store.listRequestDetails(current.id),
+        baseline,
+        baseline ? store.listRequestDetails(baseline.id) : []
+      );
+    }
+  );
 
   app.get<{ Params: { id: string }; Querystring: { q?: string; tool?: string; skill?: string; limit?: string } }>(
     "/api/sessions/:id/search",
@@ -266,4 +289,14 @@ function defaultTurnAnnotation(sessionId: string, turnKey: string): TurnAnnotati
     note: "",
     updatedAt: null
   };
+}
+
+function defaultBaselineSession(sessions: ReturnType<RequestStore["listSessions"]>, current: ReturnType<RequestStore["listSessions"]>[number]) {
+  return sessions
+    .filter((session) => session.id !== current.id)
+    .sort((left, right) => {
+      const leftBefore = left.startedAt < current.startedAt ? 0 : 1;
+      const rightBefore = right.startedAt < current.startedAt ? 0 : 1;
+      return leftBefore - rightBefore || right.startedAt.localeCompare(left.startedAt);
+    })[0] ?? null;
 }

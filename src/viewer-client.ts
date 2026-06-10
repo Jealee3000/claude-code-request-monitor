@@ -4,6 +4,7 @@ export function renderViewerClientScript(repoRoot: string): string {
     const state = {
       sessions: [],
       sessionExport: null,
+      sessionCompare: null,
       claudeSessions: [],
       diagnostics: null,
       requests: [],
@@ -109,6 +110,7 @@ export function renderViewerClientScript(repoRoot: string): string {
     async function selectSession(id) {
       state.selectedSession = id;
       state.sessionExport = null;
+      state.sessionCompare = null;
       state.selectedRequest = null;
       state.requestSearchResults = null;
       state.detail = null;
@@ -121,6 +123,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.systemPrompt = null;
       state.turnReplay = null;
       state.agentInsight = null;
+      state.sessionCompare = await fetchJson('/api/sessions/' + encodeURIComponent(id) + '/compare');
       await refreshRequests({ resetSelection: true });
       renderSessions();
       renderDetail();
@@ -300,6 +303,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       if (state.selectedSession === sessionId) {
         state.selectedSession = null;
         state.sessionExport = null;
+        state.sessionCompare = null;
         state.requests = [];
         state.timeline = [];
         clearSelectedState();
@@ -516,6 +520,11 @@ export function renderViewerClientScript(repoRoot: string): string {
 
     function renderDetail() {
       if (!state.detail) {
+        if (state.sessionCompare) {
+          detailEl.className = '';
+          detailEl.innerHTML = filterHtml(renderSessionCompare());
+          return;
+        }
         detailEl.className = 'empty';
         detailEl.textContent = 'Select a request';
         return;
@@ -573,6 +582,60 @@ export function renderViewerClientScript(repoRoot: string): string {
           '<div class="secondary">Context chars: ' + escapeHtml(turn.maxContextChars) + ' - tool_use/results: ' + escapeHtml(turn.toolUseCount + ' / ' + turn.toolResultCount) + '</div>' +
           '</button>';
       }).join('');
+    }
+
+    function renderSessionCompare() {
+      const compare = state.sessionCompare;
+      if (!compare) {
+        return '<div class="empty">Select a session to compare monitored runs.</div>';
+      }
+      const baseline = compare.baseline
+        ? '<div class="panel"><div class="panel-title">Baseline session</div>' + renderSessionCompareSide(compare.baseline) + '</div>'
+        : '<div class="empty">' + escapeHtml(compare.reason || 'No baseline session') + '</div>';
+      const deltas = compare.deltas
+        ? '<div class="metric-grid">' +
+          metric('Requests delta', signed(compare.deltas.requestCount)) +
+          metric('Turns delta', signed(compare.deltas.turnCount)) +
+          metric('Context delta', signed(compare.deltas.contextChars)) +
+          metric('Tools delta', signed(compare.deltas.toolCount)) +
+          metric('Skills delta', signed(compare.deltas.suspectedSkillCount)) +
+          metric('Matched prompts', compare.deltas.matchedPromptCount) +
+          '</div>'
+        : '';
+      return '<div class="panel"><div class="panel-title">Session Compare</div><div class="primary">' +
+        escapeHtml(compare.headline) +
+        '</div></div>' +
+        deltas +
+        '<div class="panel"><div class="panel-title">Current session</div>' + renderSessionCompareSide(compare.current) + '</div>' +
+        baseline +
+        '<div class="panel"><div class="panel-title">Matched prompts</div>' + renderMatchedPrompts(compare.matchedPrompts) + '</div>' +
+        '<div class="panel"><div class="panel-title">Tools added</div>' + renderList(compare.toolDiff.added) + '</div>' +
+        '<div class="panel"><div class="panel-title">Tools removed</div>' + renderList(compare.toolDiff.removed) + '</div>' +
+        '<div class="panel"><div class="panel-title">Skills added</div>' + renderList(compare.skillDiff.added) + '</div>' +
+        '<div class="panel"><div class="panel-title">Skills removed</div>' + renderList(compare.skillDiff.removed) + '</div>' +
+        '<div class="panel"><div class="panel-title">Only current prompts</div>' + renderList(compare.onlyCurrentPrompts) + '</div>' +
+        '<div class="panel"><div class="panel-title">Only baseline prompts</div>' + renderList(compare.onlyBaselinePrompts) + '</div>';
+    }
+
+    function renderSessionCompareSide(side) {
+      return '<div class="secondary">Session: ' + escapeHtml(side.sessionId) + ' - Started: ' + escapeHtml(side.startedAt) + '</div>' +
+        '<div class="secondary">Project: ' + escapeHtml(side.projectPath) + '</div>' +
+        '<div class="secondary">Requests: ' + escapeHtml(side.requestCount) + ' - Turns: ' + escapeHtml(side.turnCount) + ' - Max context: ' + escapeHtml(side.maxContextChars) + '</div>' +
+        '<div class="secondary">Tools: ' + escapeHtml(side.toolNames.join(', ') || 'none') + '</div>' +
+        '<div class="secondary">Skills: ' + escapeHtml(side.suspectedSkillNames.join(', ') || 'none') + '</div>';
+    }
+
+    function renderMatchedPrompts(prompts) {
+      if (!prompts || !prompts.length) return '<span class="secondary">none</span>';
+      return prompts.map((prompt) => '<div class="row">' +
+        '<div class="primary">' + escapeHtml(prompt.prompt) + '</div>' +
+        '<div class="secondary">Current requests: ' + escapeHtml(prompt.currentRequestIds.join(', ')) + ' - Baseline requests: ' + escapeHtml(prompt.baselineRequestIds.join(', ')) + '</div>' +
+        '<div class="secondary">Context delta: ' + escapeHtml(signed(prompt.contextDelta)) + ' - Final response changed: ' + escapeHtml(prompt.finalResponseChanged) + '</div>' +
+        '<div class="secondary">Tools added: ' + escapeHtml(prompt.toolDiff.added.join(', ') || 'none') + ' - removed: ' + escapeHtml(prompt.toolDiff.removed.join(', ') || 'none') + '</div>' +
+        '<div class="secondary">Skills added: ' + escapeHtml(prompt.skillDiff.added.join(', ') || 'none') + ' - removed: ' + escapeHtml(prompt.skillDiff.removed.join(', ') || 'none') + '</div>' +
+        '<div class="secondary">Current final response</div><pre class="raw">' + escapeHtml(prompt.currentFinalAssistantPreview || 'none') + '</pre>' +
+        '<div class="secondary">Baseline final response</div><pre class="raw">' + escapeHtml(prompt.baselineFinalAssistantPreview || 'none') + '</pre>' +
+        '</div>').join('');
     }
 
     function renderAgentInsight() {

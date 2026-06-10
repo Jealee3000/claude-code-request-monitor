@@ -125,6 +125,7 @@ The browser UI shows:
 - Request timeline
 - Agent Insight turn summaries
 - Turn Compare for context, tools, skills, and final response differences
+- Session Compare for repeated prompts across monitored runs
 - Markdown export for selected turn learning notes
 - Session-level Markdown export for whole monitored runs
 - Turn bookmarks, tags, and notes for marking useful learning examples

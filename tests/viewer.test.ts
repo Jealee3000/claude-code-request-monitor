@@ -329,6 +329,58 @@ describe("viewer", () => {
     expect(response.json().markdown).toContain("Session export should include this note.");
   });
 
+  it("returns session compare for repeated prompts across sessions", async () => {
+    store.createSession({
+      id: "session-baseline",
+      projectPath: "D:\\code\\demo",
+      inspectBody: true
+    });
+    store.logRequest({
+      sessionId: "session-baseline",
+      startedAt: "2026-06-09T00:30:00.000Z",
+      method: "POST",
+      host: "api.anthropic.com",
+      path: "/v1/messages",
+      statusCode: 200,
+      contentType: "text/event-stream",
+      requestBody: {
+        system: [{ type: "text", text: "Claude Code\nname: read-skill\ndescription: read files" }],
+        messages: [{ role: "user", content: "next question" }],
+        tools: [{ name: "Read" }]
+      },
+      responseBody: "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"baseline answer\"}}"
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/session-a/compare?baselineSessionId=session-baseline"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      comparable: true,
+      current: {
+        sessionId: "session-a",
+        turnCount: 2
+      },
+      baseline: {
+        sessionId: "session-baseline",
+        turnCount: 1
+      },
+      matchedPrompts: [
+        {
+          prompt: "next question",
+          toolDiff: { added: ["Edit"], removed: [] },
+          skillDiff: {
+            added: ["browser:control-in-app-browser"],
+            removed: ["read-skill"]
+          },
+          finalResponseChanged: true
+        }
+      ]
+    });
+  });
+
   it("returns turn compare for a request", async () => {
     const requests = store.listRequests("session-a");
     const response = await app.inject({ method: "GET", url: `/api/requests/${requests[0].id}/turn-compare` });
@@ -586,6 +638,9 @@ describe("viewer", () => {
     expect(response.body).toContain("renderSearchResults");
     expect(response.body).toContain("setInterval");
     expect(response.body).toContain("refreshRequests");
+    expect(response.body).toContain("sessionCompare");
+    expect(response.body).toContain("renderSessionCompare");
+    expect(response.body).toContain("Matched prompts");
     expect(response.body).toContain("copyCommand");
     expect(response.body).toContain("loadDiagnostics");
     expect(response.body).toContain("renderSessionChecks");
