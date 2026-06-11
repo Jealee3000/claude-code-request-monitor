@@ -155,6 +155,8 @@ export const VIEWER_STYLES = String.raw`    :root {
       background: var(--panel);
     }
     .filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+    .finding-controls { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; }
+    .finding-controls .mode-switch { flex-wrap: wrap; }
     .issue { border-left: 3px solid var(--warn); padding-left: 8px; }
     .issue.info { border-left-color: var(--accent); }
     .issue.bad { border-left-color: var(--bad); }

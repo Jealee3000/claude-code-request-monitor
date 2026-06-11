@@ -124,7 +124,7 @@ The browser UI shows:
 - Turn-first traffic navigation with request detail drill-down
 - Request timeline
 - Agent Insight turn summaries
-- Session Findings for context growth, parameter changes, schema changes, and tool-result risks
+- Session Findings for context growth, parameter changes, schema changes, and tool-result risks, with kind/severity filters
 - Session Inventory for tools, schema changes, and suspected skills
 - Session Params timeline for model, max tokens, thinking, tool choice, and sampling changes
 - Turn Compare for context, tools, skills, and final response differences

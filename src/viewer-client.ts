@@ -31,6 +31,8 @@ export function renderViewerClientScript(repoRoot: string): string {
       tab: 'overview',
       leftTab: 'monitor',
       requestMode: 'turns',
+      findingKindFilter: 'all',
+      findingSeverityFilter: 'all',
       refreshingRequests: false
     };
     const sessionsEl = document.getElementById('sessions');
@@ -81,6 +83,9 @@ export function renderViewerClientScript(repoRoot: string): string {
         saveTurnAnnotation(target).catch((error) => {
           target.textContent = error.message;
         });
+      }
+      if (target instanceof HTMLElement && target.classList.contains('finding-filter')) {
+        setFindingFilter(target.dataset.findingKind, target.dataset.findingSeverity);
       }
     });
     document.querySelectorAll('.tab').forEach((button) => {
@@ -232,6 +237,12 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.requestMode = mode === 'requests' ? 'requests' : 'turns';
       syncRequestMode();
       renderRequests();
+    }
+
+    function setFindingFilter(kind, severity) {
+      if (kind) state.findingKindFilter = kind;
+      if (severity) state.findingSeverityFilter = severity;
+      renderDetail();
     }
 
     function syncRequestMode() {
@@ -674,17 +685,42 @@ export function renderViewerClientScript(repoRoot: string): string {
       if (!findings) {
         return '<div class="empty">Select a session to inspect learning findings.</div>';
       }
+      const filtered = filterSessionFindings(findings.findings || []);
       return '<div class="metric-grid">' +
         metric('Requests', findings.requestCount) +
         metric('Agent requests', findings.agentRequestCount) +
         metric('Findings', findings.findingCount) +
         metric('Warnings', findings.warningCount) +
+        metric('Matched', filtered.length) +
         '</div>' +
-        '<div class="panel"><div class="panel-title">Learning Findings</div>' + renderSessionFindingItems(findings.findings) + '</div>';
+        '<div class="panel"><div class="panel-title">Finding Filters</div>' + renderFindingFilters(findings.findings || []) + '</div>' +
+        '<div class="panel"><div class="panel-title">Learning Findings</div>' + renderSessionFindingItems(filtered) + '</div>';
+    }
+
+    function renderFindingFilters(items) {
+      const kinds = ['all', 'risk', 'context', 'tools', 'parameters', 'skills', 'response'];
+      const severities = ['all', 'warning', 'error', 'info'];
+      return '<div class="finding-controls">' +
+        '<div class="secondary">Kind</div>' +
+        '<div class="mode-switch">' + kinds.map((kind) =>
+          '<button class="mode-button finding-filter ' + (state.findingKindFilter === kind ? 'active' : '') + '" data-finding-kind="' + escapeHtml(kind) + '" type="button">' + escapeHtml(kindLabel(kind)) + '</button>'
+        ).join('') + '</div>' +
+        '<div class="secondary">Severity</div>' +
+        '<div class="mode-switch">' + severities.map((severity) =>
+          '<button class="mode-button finding-filter ' + (state.findingSeverityFilter === severity ? 'active' : '') + '" data-finding-severity="' + escapeHtml(severity) + '" type="button">' + escapeHtml(severityLabel(severity)) + '</button>'
+        ).join('') + '</div>' +
+        '</div>';
+    }
+
+    function filterSessionFindings(items) {
+      return items.filter((item) => {
+        return (state.findingKindFilter === 'all' || item.kind === state.findingKindFilter) &&
+          (state.findingSeverityFilter === 'all' || item.severity === state.findingSeverityFilter);
+      });
     }
 
     function renderSessionFindingItems(items) {
-      if (!items || !items.length) return '<span class="secondary">none</span>';
+      if (!items || !items.length) return '<span class="secondary">No findings match the current filters.</span>';
       return items.map((item) => {
         const severityClass = item.severity === 'error' ? 'bad' : item.severity === 'warning' ? 'warning' : '';
         const badge = '<span class="flag">' + escapeHtml(item.kind) + '</span><span class="flag">' + escapeHtml(item.severity) + '</span>';
@@ -699,6 +735,14 @@ export function renderViewerClientScript(repoRoot: string): string {
           content +
           '</button>';
       }).join('');
+    }
+
+    function kindLabel(kind) {
+      return kind === 'all' ? 'All' : kind;
+    }
+
+    function severityLabel(severity) {
+      return severity === 'all' ? 'All' : severity === 'warning' ? 'Warnings' : severity;
     }
 
     function renderSessionInventory() {

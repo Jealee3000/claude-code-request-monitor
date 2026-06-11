@@ -850,6 +850,14 @@ describe("viewer", () => {
     expect(response.body).toContain("renderSessionCompare");
     expect(response.body).toContain("sessionFindings");
     expect(response.body).toContain("renderSessionFindings");
+    expect(response.body).toContain("findingKindFilter");
+    expect(response.body).toContain("findingSeverityFilter");
+    expect(response.body).toContain("setFindingFilter");
+    expect(response.body).toContain("renderFindingFilters");
+    expect(response.body).toContain("data-finding-kind");
+    expect(response.body).toContain("data-finding-severity");
+    expect(response.body).toContain("'risk'");
+    expect(response.body).toContain("'warning'");
     expect(response.body).toContain("sessionInventory");
     expect(response.body).toContain("renderSessionInventory");
     expect(response.body).toContain("sessionParameters");
