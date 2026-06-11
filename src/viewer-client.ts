@@ -13,6 +13,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       detail: null,
       contextDiff: null,
       contextWaterfall: null,
+      tokenBudget: null,
       responsePreview: null,
       turnDetail: null,
       turnAnnotation: null,
@@ -118,6 +119,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.detail = null;
       state.contextDiff = null;
       state.contextWaterfall = null;
+      state.tokenBudget = null;
       state.responsePreview = null;
       state.turnDetail = null;
       state.turnAnnotation = null;
@@ -152,6 +154,7 @@ export function renderViewerClientScript(repoRoot: string): string {
           state.detail = null;
           state.contextDiff = null;
           state.contextWaterfall = null;
+          state.tokenBudget = null;
           state.responsePreview = null;
           state.turnDetail = null;
           state.turnAnnotation = null;
@@ -222,10 +225,11 @@ export function renderViewerClientScript(repoRoot: string): string {
     async function selectRequest(id, nextTab) {
       state.selectedRequest = id;
       const encodedId = encodeURIComponent(id);
-      const [detail, contextDiff, contextWaterfall, responsePreview, turnDetail, turnAnnotation, turnCompare, turnExport, systemPrompt, turnReplay, toolGraph, agentInsight] = await Promise.all([
+      const [detail, contextDiff, contextWaterfall, tokenBudget, responsePreview, turnDetail, turnAnnotation, turnCompare, turnExport, systemPrompt, turnReplay, toolGraph, agentInsight] = await Promise.all([
         fetchJson('/api/requests/' + encodedId),
         fetchJson('/api/requests/' + encodedId + '/context-diff'),
         fetchJson('/api/requests/' + encodedId + '/context-waterfall'),
+        fetchJson('/api/requests/' + encodedId + '/token-budget'),
         fetchJson('/api/requests/' + encodedId + '/response-preview'),
         fetchJson('/api/requests/' + encodedId + '/turn-detail'),
         fetchJson('/api/requests/' + encodedId + '/turn-annotation'),
@@ -239,6 +243,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.detail = detail;
       state.contextDiff = contextDiff;
       state.contextWaterfall = contextWaterfall;
+      state.tokenBudget = tokenBudget;
       state.responsePreview = responsePreview;
       state.turnDetail = turnDetail;
       state.turnAnnotation = turnAnnotation;
@@ -272,6 +277,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.detail = null;
       state.contextDiff = null;
       state.contextWaterfall = null;
+      state.tokenBudget = null;
       state.responsePreview = null;
       state.turnDetail = null;
       state.turnAnnotation = null;
@@ -553,6 +559,7 @@ export function renderViewerClientScript(repoRoot: string): string {
         turn: renderTurnDetail,
         diff: renderContextDiff,
         waterfall: renderContextWaterfall,
+        budget: renderTokenBudget,
         agent: renderAgent,
         system: renderSystemPrompt,
         headers: renderHeaders,
@@ -943,6 +950,74 @@ export function renderViewerClientScript(repoRoot: string): string {
           '<div class="waterfall-track"><div class="waterfall-bar" style="width: ' + width + '%"></div></div>' +
           (segment.preview ? '<pre class="raw">' + escapeHtml(segment.preview) + '</pre>' : '') +
           '</div>';
+      }).join('');
+    }
+
+    function renderTokenBudget() {
+      const budget = state.tokenBudget;
+      if (!budget) {
+        return '<div class="empty">Select an agent request to inspect its token budget.</div>';
+      }
+      if (budget.reason) {
+        return '<div class="empty">' + escapeHtml(budget.reason) + '</div>';
+      }
+      return '<div class="metric-grid">' +
+        metric('Estimated tokens', budget.summary.estimatedContextTokens) +
+        metric('Context delta', budget.summary.contextDeltaTokens === null ? 'n/a' : signed(budget.summary.contextDeltaTokens)) +
+        metric('Actual input', budget.usage.inputTokens ?? 'unknown') +
+        metric('Actual output', budget.usage.outputTokens ?? 'unknown') +
+        metric('Max tokens', budget.maxTokens ?? 'unset') +
+        metric('Thinking budget', budget.thinkingBudgetTokens ?? 'unset') +
+        metric('Tool schema', budget.summary.toolSchemaTokens + ' tokens / ' + budget.summary.toolSchemaPercent + '%') +
+        metric('Turn output', budget.summary.capturedTurnOutputTokens) +
+        '</div>' +
+        '<div class="panel"><div class="panel-title">Token Budget</div>' +
+          '<div class="primary">' + escapeHtml(budget.model || 'unknown model') + '</div>' +
+          '<div class="secondary">Request ' + escapeHtml(budget.requestId) +
+            (budget.previousRequestId ? ' - previous ' + escapeHtml(budget.previousRequestId) : '') +
+            ' - ' + escapeHtml(budget.requestCount) + ' request(s) in turn</div>' +
+          '<div class="secondary">Estimation uses roughly 4 captured characters per token; actual usage comes from streamed API usage when present.</div>' +
+        '</div>' +
+        '<div class="panel"><div class="panel-title">Context Sections</div>' + renderTokenSections(budget.sections, 'primary') + '</div>' +
+        '<div class="panel"><div class="panel-title">System / Skill Budget</div>' + renderTokenSections(budget.sections, 'system_subsection') + '</div>' +
+        '<div class="panel"><div class="panel-title">Message Budget</div>' + renderTokenSections(budget.sections, 'messages_subsection') + '</div>' +
+        '<div class="panel"><div class="panel-title">Context Growth</div>' + renderTokenCurve(budget.curve) + '</div>' +
+        '<div class="panel"><div class="panel-title">Actual Usage</div>' +
+          '<div class="secondary">Selected request input tokens: ' + escapeHtml(budget.usage.inputTokens ?? 'unknown') + '</div>' +
+          '<div class="secondary">Selected request output tokens: ' + escapeHtml(budget.usage.outputTokens ?? 'unknown') + '</div>' +
+          '<div class="secondary">Captured output tokens across this turn: ' + escapeHtml(budget.summary.capturedTurnOutputTokens) + '</div>' +
+        '</div>';
+    }
+
+    function renderTokenSections(sections, group) {
+      const filtered = (sections || []).filter((section) => section.group === group);
+      if (!filtered.length) return '<span class="secondary">none</span>';
+      return filtered.map((section) => {
+        const width = Math.max(1, Math.min(100, Number(section.percent) || 0));
+        const delta = section.deltaTokens === null ? 'first request' : signed(section.deltaTokens) + ' tokens';
+        return '<div class="waterfall-row">' +
+          '<div class="waterfall-heading">' +
+            '<span class="primary">' + escapeHtml(section.label) + '</span>' +
+            '<span class="secondary">' + escapeHtml(section.estimatedTokens + ' tokens - ' + section.percent + '% - ' + delta + ' - ' + section.chars + ' chars') + '</span>' +
+          '</div>' +
+          '<div class="waterfall-track"><div class="waterfall-bar" style="width: ' + width + '%"></div></div>' +
+          (section.preview ? '<pre class="raw">' + escapeHtml(section.preview) + '</pre>' : '') +
+          '</div>';
+      }).join('');
+    }
+
+    function renderTokenCurve(curve) {
+      if (!curve || !curve.length) return '<span class="secondary">none</span>';
+      const maxTokens = Math.max(1, ...curve.map((point) => Number(point.estimatedContextTokens) || 0));
+      return curve.map((point) => {
+        const width = Math.max(1, Math.min(100, ((Number(point.estimatedContextTokens) || 0) / maxTokens) * 100));
+        const delta = point.contextDeltaTokens === null ? 'first request' : signed(point.contextDeltaTokens) + ' tokens';
+        return '<button class="row" type="button" onclick="selectRequest(' + point.requestId + ', \\'budget\\')">' +
+          '<div class="primary">#' + escapeHtml(point.stepIndex) + ' request ' + escapeHtml(point.requestId) + '</div>' +
+          '<div class="secondary">' + escapeHtml(point.startedAt + ' - context ' + point.estimatedContextTokens + ' tokens / ' + point.contextChars + ' chars - ' + delta) + '</div>' +
+          '<div class="secondary">System: ' + escapeHtml(point.systemTokens) + ' tokens - Tools schema: ' + escapeHtml(point.toolSchemaTokens) + ' tokens - Actual usage: ' + escapeHtml(point.inputTokens ?? 'unknown') + ' in / ' + escapeHtml(point.outputTokens ?? 'unknown') + ' out</div>' +
+          '<div class="waterfall-track"><div class="waterfall-bar" style="width: ' + width + '%"></div></div>' +
+          '</button>';
       }).join('');
     }
 

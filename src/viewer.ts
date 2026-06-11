@@ -12,6 +12,7 @@ import { buildRequestSearch } from "./request-search.js";
 import { buildSystemPromptPreview } from "./system-prompt.js";
 import { buildSessionCompare } from "./session-compare.js";
 import { buildSessionExport } from "./session-export.js";
+import { buildTokenBudget } from "./token-budget.js";
 import { buildToolGraph } from "./tool-graph.js";
 import { buildTurnDetail } from "./turn-detail.js";
 import { buildTurnCompare } from "./turn-compare.js";
@@ -144,6 +145,17 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
       return reply.code(404).send({ error: "Request not found" });
     }
     return buildContextWaterfall(store.getPreviousRequestDetail(requestId), current);
+  });
+
+  app.get<{ Params: { id: string } }>("/api/requests/:id/token-budget", async (request, reply) => {
+    const requestId = Number(request.params.id);
+    const detail = Number.isFinite(requestId) ? store.getRequestDetail(requestId) : undefined;
+
+    if (!detail) {
+      return reply.code(404).send({ error: "Request not found" });
+    }
+
+    return buildTokenBudget(store.listRequestDetails(detail.sessionId), requestId);
   });
 
   app.get<{ Params: { id: string } }>("/api/requests/:id/response-preview", async (request, reply) => {

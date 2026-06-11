@@ -73,6 +73,7 @@ ${VIEWER_STYLES}
           <button class="tab" data-tab="turn" type="button">Turn</button>
           <button class="tab" data-tab="diff" type="button">Diff</button>
           <button class="tab" data-tab="waterfall" type="button">Waterfall</button>
+          <button class="tab" data-tab="budget" type="button">Budget</button>
           <button class="tab" data-tab="agent" type="button">Agent</button>
           <button class="tab" data-tab="system" type="button">System</button>
           <button class="tab" data-tab="headers" type="button">Headers</button>
