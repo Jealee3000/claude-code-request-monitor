@@ -125,6 +125,7 @@ The browser UI shows:
 - Request timeline
 - Agent Insight turn summaries
 - Session Inventory for tools, schema changes, and suspected skills
+- Session Params timeline for model, max tokens, thinking, tool choice, and sampling changes
 - Turn Compare for context, tools, skills, and final response differences
 - Session Compare for repeated prompts across monitored runs
 - Context Waterfall for system, tools, messages, skills, tool results, user input, and assistant history

@@ -6,6 +6,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       sessionExport: null,
       sessionCompare: null,
       sessionInventory: null,
+      sessionParameters: null,
       claudeSessions: [],
       diagnostics: null,
       requests: [],
@@ -116,6 +117,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.sessionExport = null;
       state.sessionCompare = null;
       state.sessionInventory = null;
+      state.sessionParameters = null;
       state.selectedRequest = null;
       state.requestSearchResults = null;
       state.detail = null;
@@ -131,12 +133,14 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.turnReplay = null;
       state.toolGraph = null;
       state.agentInsight = null;
-      const [sessionCompare, sessionInventory] = await Promise.all([
+      const [sessionCompare, sessionInventory, sessionParameters] = await Promise.all([
         fetchJson('/api/sessions/' + encodeURIComponent(id) + '/compare'),
-        fetchJson('/api/sessions/' + encodeURIComponent(id) + '/inventory')
+        fetchJson('/api/sessions/' + encodeURIComponent(id) + '/inventory'),
+        fetchJson('/api/sessions/' + encodeURIComponent(id) + '/parameters')
       ]);
       state.sessionCompare = sessionCompare;
       state.sessionInventory = sessionInventory;
+      state.sessionParameters = sessionParameters;
       await refreshRequests({ resetSelection: true });
       renderSessions();
       renderDetail();
@@ -155,6 +159,7 @@ export function renderViewerClientScript(repoRoot: string): string {
         }
         await loadTimeline();
         state.sessionInventory = await fetchJson('/api/sessions/' + encodeURIComponent(state.selectedSession) + '/inventory');
+        state.sessionParameters = await fetchJson('/api/sessions/' + encodeURIComponent(state.selectedSession) + '/parameters');
         if (options.resetSelection) {
           state.selectedRequest = null;
         } else if (previousRequest && !state.requests.some((request) => request.id === previousRequest)) {
@@ -331,6 +336,7 @@ export function renderViewerClientScript(repoRoot: string): string {
         state.sessionExport = null;
         state.sessionCompare = null;
         state.sessionInventory = null;
+        state.sessionParameters = null;
         state.requests = [];
         state.timeline = [];
         clearSelectedState();
@@ -549,7 +555,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       if (!state.detail) {
         if (state.sessionCompare) {
           detailEl.className = '';
-          detailEl.innerHTML = filterHtml(state.tab === 'inventory' ? renderSessionInventory() : renderSessionCompare());
+          detailEl.innerHTML = filterHtml(renderSessionLevelDetail());
           return;
         }
         detailEl.className = 'empty';
@@ -561,6 +567,7 @@ export function renderViewerClientScript(repoRoot: string): string {
         overview: renderOverview,
         insight: renderAgentInsight,
         inventory: renderSessionInventory,
+        params: renderSessionParameters,
         compare: renderTurnCompare,
         export: renderTurnExport,
         replay: renderTurnReplay,
@@ -579,6 +586,12 @@ export function renderViewerClientScript(repoRoot: string): string {
       };
       const html = (htmlByTab[state.tab] || renderOverview)();
       detailEl.innerHTML = filterHtml(html);
+    }
+
+    function renderSessionLevelDetail() {
+      if (state.tab === 'inventory') return renderSessionInventory();
+      if (state.tab === 'params') return renderSessionParameters();
+      return renderSessionCompare();
     }
 
     function renderOverview() {
@@ -683,6 +696,46 @@ export function renderViewerClientScript(repoRoot: string): string {
         '<div class="secondary">Requests: ' + escapeHtml((skill.requestIds || []).join(', ')) + '</div>' +
         (skill.preview ? '<pre class="raw">' + escapeHtml(skill.preview) + '</pre>' : '') +
         '</button>').join('');
+    }
+
+    function renderSessionParameters() {
+      const parameters = state.sessionParameters;
+      if (!parameters) {
+        return '<div class="empty">Select a session to inspect agent request parameters.</div>';
+      }
+      const latest = parameters.latest;
+      return '<div class="metric-grid">' +
+        metric('Requests', parameters.requestCount) +
+        metric('Agent requests', parameters.agentRequestCount) +
+        metric('Latest model', latest?.model ?? 'unknown') +
+        metric('Latest max tokens', latest?.maxTokens ?? 'unset') +
+        metric('Latest thinking', latest?.thinking ?? 'unset') +
+        metric('Latest tool choice', latest?.toolChoice ?? 'unset') +
+        '</div>' +
+        '<div class="panel"><div class="panel-title">Distinct Parameters</div>' +
+          '<div class="secondary">Models: ' + escapeHtml((parameters.distinct.models || []).join(', ') || 'none') + '</div>' +
+          '<div class="secondary">Max tokens: ' + escapeHtml((parameters.distinct.maxTokens || []).join(', ') || 'none') + '</div>' +
+          '<div class="secondary">Thinking: ' + escapeHtml((parameters.distinct.thinking || []).join(', ') || 'none') + '</div>' +
+          '<div class="secondary">Tool choices: ' + escapeHtml((parameters.distinct.toolChoices || []).join(', ') || 'none') + '</div>' +
+        '</div>' +
+        '<div class="panel"><div class="panel-title">Parameter Timeline</div>' + renderParameterSnapshots(parameters.snapshots) + '</div>';
+    }
+
+    function renderParameterSnapshots(snapshots) {
+      if (!snapshots || !snapshots.length) return '<span class="secondary">none</span>';
+      return snapshots.map((snapshot) => {
+        const changes = snapshot.changedFields && snapshot.changedFields.length
+          ? snapshot.changedFields.map((field) => '<span class="flag">' + escapeHtml(field) + '</span>').join('')
+          : '<span class="secondary">first agent request</span>';
+        return '<button class="row" type="button" onclick="selectRequest(' + snapshot.requestId + ', \\'agent\\')">' +
+          '<div class="primary">request ' + escapeHtml(snapshot.requestId) + ' - ' + escapeHtml(snapshot.startedAt) + '</div>' +
+          '<div class="secondary">Model: ' + escapeHtml(snapshot.model ?? 'unknown') + ' - stream: ' + escapeHtml(snapshot.stream ?? 'unknown') + ' - max_tokens: ' + escapeHtml(snapshot.maxTokens ?? 'unset') + '</div>' +
+          '<div class="secondary">Thinking: ' + escapeHtml(snapshot.thinking ?? 'unset') + ' - tool_choice: ' + escapeHtml(snapshot.toolChoice ?? 'unset') + '</div>' +
+          '<div class="secondary">Temp: ' + escapeHtml(snapshot.temperature ?? 'unset') + ' - top_p: ' + escapeHtml(snapshot.topP ?? 'unset') + ' - messages/tools: ' + escapeHtml(snapshot.messageCount + ' / ' + snapshot.toolCount) + '</div>' +
+          '<div class="secondary">Context chars: ' + escapeHtml(snapshot.estimatedContextChars) + ' (' + escapeHtml(snapshot.contextDelta === null ? 'first' : signed(snapshot.contextDelta)) + ')</div>' +
+          '<div class="secondary">Changed: ' + changes + '</div>' +
+          '</button>';
+      }).join('');
     }
 
     function renderSessionCompareSide(side) {

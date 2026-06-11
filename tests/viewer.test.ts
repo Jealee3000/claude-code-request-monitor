@@ -248,6 +248,54 @@ describe("viewer", () => {
     });
   });
 
+  it("returns session parameters for agent requests", async () => {
+    store.logRequest({
+      sessionId: "session-a",
+      startedAt: "2026-06-09T01:02:00.000Z",
+      method: "POST",
+      host: "api.anthropic.com",
+      path: "/v1/messages",
+      statusCode: 200,
+      requestBody: {
+        model: "claude-sonnet-4-20250514",
+        stream: true,
+        max_tokens: 8192,
+        temperature: 0,
+        tool_choice: { type: "tool", name: "Edit" },
+        thinking: { type: "enabled", budget_tokens: 2048 },
+        messages: [{ role: "user", content: "parameter check" }],
+        tools: [{ name: "Edit" }]
+      }
+    });
+
+    const response = await app.inject({ method: "GET", url: "/api/sessions/session-a/parameters" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      requestCount: 3,
+      agentRequestCount: 3,
+      latest: {
+        model: "claude-sonnet-4-20250514",
+        stream: true,
+        maxTokens: 8192,
+        toolChoice: "tool:Edit",
+        thinking: "enabled:2048"
+      },
+      distinct: {
+        models: ["claude-sonnet-4-20250514"],
+        maxTokens: [8192],
+        thinking: ["enabled:2048"],
+        toolChoices: ["tool:Edit"]
+      },
+      snapshots: expect.arrayContaining([
+        expect.objectContaining({
+          requestId: expect.any(Number),
+          changedFields: expect.arrayContaining(["model", "stream", "maxTokens", "toolChoice", "thinking"])
+        })
+      ])
+    });
+  });
+
   it("returns context diff for a request", async () => {
     const requests = store.listRequests("session-a");
     const response = await app.inject({ method: "GET", url: `/api/requests/${requests[0].id}/context-diff` });
@@ -735,6 +783,7 @@ describe("viewer", () => {
     expect(response.body).toContain("Overview");
     expect(response.body).toContain("Insight");
     expect(response.body).toContain("Inventory");
+    expect(response.body).toContain("Params");
     expect(response.body).toContain("Compare");
     expect(response.body).toContain("Export");
     expect(response.body).toContain("Replay");
@@ -778,6 +827,8 @@ describe("viewer", () => {
     expect(response.body).toContain("renderSessionCompare");
     expect(response.body).toContain("sessionInventory");
     expect(response.body).toContain("renderSessionInventory");
+    expect(response.body).toContain("sessionParameters");
+    expect(response.body).toContain("renderSessionParameters");
     expect(response.body).toContain("Matched prompts");
     expect(response.body).toContain("copyCommand");
     expect(response.body).toContain("loadDiagnostics");
