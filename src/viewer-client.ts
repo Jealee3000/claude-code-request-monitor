@@ -5,6 +5,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       sessions: [],
       sessionExport: null,
       sessionCompare: null,
+      sessionInventory: null,
       claudeSessions: [],
       diagnostics: null,
       requests: [],
@@ -114,6 +115,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.selectedSession = id;
       state.sessionExport = null;
       state.sessionCompare = null;
+      state.sessionInventory = null;
       state.selectedRequest = null;
       state.requestSearchResults = null;
       state.detail = null;
@@ -129,7 +131,12 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.turnReplay = null;
       state.toolGraph = null;
       state.agentInsight = null;
-      state.sessionCompare = await fetchJson('/api/sessions/' + encodeURIComponent(id) + '/compare');
+      const [sessionCompare, sessionInventory] = await Promise.all([
+        fetchJson('/api/sessions/' + encodeURIComponent(id) + '/compare'),
+        fetchJson('/api/sessions/' + encodeURIComponent(id) + '/inventory')
+      ]);
+      state.sessionCompare = sessionCompare;
+      state.sessionInventory = sessionInventory;
       await refreshRequests({ resetSelection: true });
       renderSessions();
       renderDetail();
@@ -147,6 +154,7 @@ export function renderViewerClientScript(repoRoot: string): string {
           state.requestSearchResults = null;
         }
         await loadTimeline();
+        state.sessionInventory = await fetchJson('/api/sessions/' + encodeURIComponent(state.selectedSession) + '/inventory');
         if (options.resetSelection) {
           state.selectedRequest = null;
         } else if (previousRequest && !state.requests.some((request) => request.id === previousRequest)) {
@@ -322,6 +330,7 @@ export function renderViewerClientScript(repoRoot: string): string {
         state.selectedSession = null;
         state.sessionExport = null;
         state.sessionCompare = null;
+        state.sessionInventory = null;
         state.requests = [];
         state.timeline = [];
         clearSelectedState();
@@ -540,7 +549,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       if (!state.detail) {
         if (state.sessionCompare) {
           detailEl.className = '';
-          detailEl.innerHTML = filterHtml(renderSessionCompare());
+          detailEl.innerHTML = filterHtml(state.tab === 'inventory' ? renderSessionInventory() : renderSessionCompare());
           return;
         }
         detailEl.className = 'empty';
@@ -551,6 +560,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       const htmlByTab = {
         overview: renderOverview,
         insight: renderAgentInsight,
+        inventory: renderSessionInventory,
         compare: renderTurnCompare,
         export: renderTurnExport,
         replay: renderTurnReplay,
@@ -636,6 +646,43 @@ export function renderViewerClientScript(repoRoot: string): string {
         '<div class="panel"><div class="panel-title">Skills removed</div>' + renderList(compare.skillDiff.removed) + '</div>' +
         '<div class="panel"><div class="panel-title">Only current prompts</div>' + renderList(compare.onlyCurrentPrompts) + '</div>' +
         '<div class="panel"><div class="panel-title">Only baseline prompts</div>' + renderList(compare.onlyBaselinePrompts) + '</div>';
+    }
+
+    function renderSessionInventory() {
+      const inventory = state.sessionInventory;
+      if (!inventory) {
+        return '<div class="empty">Select a session to inspect its tool and skill inventory.</div>';
+      }
+      return '<div class="metric-grid">' +
+        metric('Requests', inventory.requestCount) +
+        metric('Agent requests', inventory.agentRequestCount) +
+        metric('Tools', inventory.toolCount) +
+        metric('Skills', inventory.skillCount) +
+        '</div>' +
+        '<div class="panel"><div class="panel-title">Tool Inventory</div>' + renderInventoryTools(inventory.tools) + '</div>' +
+        '<div class="panel"><div class="panel-title">Skill Inventory</div>' + renderInventorySkills(inventory.skills) + '</div>';
+    }
+
+    function renderInventoryTools(tools) {
+      if (!tools || !tools.length) return '<span class="secondary">none</span>';
+      return tools.map((tool) => '<button class="row" type="button" onclick="selectRequest(' + tool.lastRequestId + ', \\'system\\')">' +
+        '<div class="primary">' + escapeHtml(tool.name) + (tool.schemaChanged ? ' <span class="flag">schema changed</span>' : '') + '</div>' +
+        '<div class="secondary">Seen ' + escapeHtml(tool.seenCount) + ' time(s) - first request ' + escapeHtml(tool.firstRequestId) + ' - last request ' + escapeHtml(tool.lastRequestId) + '</div>' +
+        '<div class="secondary">Schema chars: ' + escapeHtml(tool.schemaChars) + ' - input schema chars: ' + escapeHtml(tool.inputSchemaChars) + '</div>' +
+        '<div class="secondary">Requests: ' + escapeHtml((tool.requestIds || []).join(', ')) + '</div>' +
+        '<div class="secondary">' + escapeHtml(tool.descriptionPreview || 'No description') + '</div>' +
+        '</button>').join('');
+    }
+
+    function renderInventorySkills(skills) {
+      if (!skills || !skills.length) return '<span class="secondary">none</span>';
+      return skills.map((skill) => '<button class="row" type="button" onclick="selectRequest(' + skill.lastRequestId + ', \\'system\\')">' +
+        '<div class="primary">' + escapeHtml(skill.name) + '</div>' +
+        '<div class="secondary">' + escapeHtml(skill.description || 'No description') + '</div>' +
+        '<div class="secondary">Seen ' + escapeHtml(skill.seenCount) + ' time(s) - first request ' + escapeHtml(skill.firstRequestId) + ' - last request ' + escapeHtml(skill.lastRequestId) + ' - chars ' + escapeHtml(skill.chars) + '</div>' +
+        '<div class="secondary">Requests: ' + escapeHtml((skill.requestIds || []).join(', ')) + '</div>' +
+        (skill.preview ? '<pre class="raw">' + escapeHtml(skill.preview) + '</pre>' : '') +
+        '</button>').join('');
     }
 
     function renderSessionCompareSide(side) {

@@ -124,6 +124,7 @@ The browser UI shows:
 - Turn-first traffic navigation with request detail drill-down
 - Request timeline
 - Agent Insight turn summaries
+- Session Inventory for tools, schema changes, and suspected skills
 - Turn Compare for context, tools, skills, and final response differences
 - Session Compare for repeated prompts across monitored runs
 - Context Waterfall for system, tools, messages, skills, tool results, user input, and assistant history

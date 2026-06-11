@@ -213,6 +213,41 @@ describe("viewer", () => {
     });
   });
 
+  it("returns session inventory for tools and skills", async () => {
+    const response = await app.inject({ method: "GET", url: "/api/sessions/session-a/inventory" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      requestCount: 2,
+      agentRequestCount: 2,
+      toolCount: 2,
+      skillCount: 1,
+      tools: [
+        expect.objectContaining({
+          name: "Read",
+          seenCount: 2,
+          firstRequestId: expect.any(Number),
+          lastRequestId: expect.any(Number),
+          requestIds: expect.any(Array)
+        }),
+        expect.objectContaining({
+          name: "Edit",
+          seenCount: 1,
+          firstRequestId: expect.any(Number),
+          lastRequestId: expect.any(Number),
+          requestIds: expect.any(Array)
+        })
+      ],
+      skills: [
+        expect.objectContaining({
+          name: "browser:control-in-app-browser",
+          description: "Control the in-app browser for local web targets.",
+          seenCount: 1
+        })
+      ]
+    });
+  });
+
   it("returns context diff for a request", async () => {
     const requests = store.listRequests("session-a");
     const response = await app.inject({ method: "GET", url: `/api/requests/${requests[0].id}/context-diff` });
@@ -699,6 +734,7 @@ describe("viewer", () => {
     expect(response.body).toContain("claude-watch-root");
     expect(response.body).toContain("Overview");
     expect(response.body).toContain("Insight");
+    expect(response.body).toContain("Inventory");
     expect(response.body).toContain("Compare");
     expect(response.body).toContain("Export");
     expect(response.body).toContain("Replay");
@@ -740,6 +776,8 @@ describe("viewer", () => {
     expect(response.body).toContain("refreshRequests");
     expect(response.body).toContain("sessionCompare");
     expect(response.body).toContain("renderSessionCompare");
+    expect(response.body).toContain("sessionInventory");
+    expect(response.body).toContain("renderSessionInventory");
     expect(response.body).toContain("Matched prompts");
     expect(response.body).toContain("copyCommand");
     expect(response.body).toContain("loadDiagnostics");
