@@ -1,4 +1,5 @@
 import { buildAgentInsight } from "./agent-insight.js";
+import { buildSessionFindings, type SessionFinding } from "./session-findings.js";
 import { buildTurnTimeline } from "./turn-timeline.js";
 import type { RequestDetail, SessionRecord, TurnAnnotation } from "./types.js";
 
@@ -26,6 +27,7 @@ export function buildSessionExport(
   const maxContextChars = turns.reduce((max, turn) => Math.max(max, turn.maxContextChars), 0);
   const toolUseCount = turns.reduce((total, turn) => total + turn.toolUseCount, 0);
   const toolResultCount = turns.reduce((total, turn) => total + turn.toolResultCount, 0);
+  const findings = buildSessionFindings(details);
   const stamp = safeStamp(session.startedAt);
 
   const markdown = [
@@ -46,6 +48,10 @@ export function buildSessionExport(
     `- Tool uses/results: ${toolUseCount} / ${toolResultCount}`,
     `- Tools: ${toolNames.join(", ") || "none"}`,
     "",
+    "## Session Findings",
+    "",
+    ...renderSessionFindings(findings.findings),
+    "",
     ...insights.flatMap(({ turn, insight }, index) =>
       renderTurnSection(index + 1, turn, insight, annotationByKey.get(turn.key))
     )
@@ -56,6 +62,21 @@ export function buildSessionExport(
     filename: `claude-watch-session-${safeFilePart(session.id)}-${stamp}.md`,
     markdown
   };
+}
+
+function renderSessionFindings(findings: SessionFinding[]): string[] {
+  if (!findings.length) {
+    return ["_No session findings detected._"];
+  }
+
+  return findings.map((finding) => {
+    const request = finding.requestId ? `request ${finding.requestId}` : "session";
+    const values = Object.entries(finding.values)
+      .filter(([, value]) => value !== null && value !== "")
+      .map(([key, value]) => `${key}=${value}`)
+      .join(", ");
+    return `- [${finding.severity}] ${finding.title} (${finding.kind}, ${request}): ${finding.detail}${values ? ` (${values})` : ""}`;
+  });
 }
 
 function renderTurnSection(

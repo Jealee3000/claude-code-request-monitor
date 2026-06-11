@@ -15,13 +15,21 @@ describe("session export", () => {
         }, responseStream("I will read the file.", "Read", "toolu_read", '{"file_path":"src/viewer.ts"}')),
         requestDetail(2, "2026-06-10T01:01:00.000Z", {
           model: "claude",
+          max_tokens: 8192,
+          thinking: { type: "enabled", budget_tokens: 2048 },
           system: [{ type: "text", text: "Claude Code\nname: read-skill\ndescription: read files" }],
           messages: [
             { role: "user", content: "inspect src/viewer.ts" },
             { role: "assistant", content: [{ type: "tool_use", id: "toolu_read", name: "Read" }] },
             { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_read", content: "viewer contents" }] }
           ],
-          tools: [{ name: "Read", input_schema: { properties: { file_path: { type: "string" } } } }]
+          tools: [
+            {
+              name: "Read",
+              description: "Read a file with offset",
+              input_schema: { properties: { file_path: { type: "string" }, offset: { type: "number" } } }
+            }
+          ]
         }, responseStream("The viewer has tabs.", null, null, null)),
         requestDetail(3, "2026-06-10T01:05:00.000Z", {
           model: "claude",
@@ -41,6 +49,10 @@ describe("session export", () => {
     });
     expect(exportNote.markdown).toContain("D:\\code\\demo");
     expect(exportNote.markdown).toContain("- Agent turns: 2");
+    expect(exportNote.markdown).toContain("## Session Findings");
+    expect(exportNote.markdown).toContain("Agent parameters changed");
+    expect(exportNote.markdown).toContain("Context grew between agent requests");
+    expect(exportNote.markdown).toContain("Tool schema changed");
     expect(exportNote.markdown).toContain("## Turn 1: inspect src/viewer.ts");
     expect(exportNote.markdown).toContain("- Requests: 1, 2");
     expect(exportNote.markdown).toContain("- Tools: Read");
