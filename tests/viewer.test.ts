@@ -296,6 +296,28 @@ describe("viewer", () => {
     });
   });
 
+  it("returns session findings for learning-worthy agent behavior", async () => {
+    const response = await app.inject({ method: "GET", url: "/api/sessions/session-a/findings" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      requestCount: 2,
+      agentRequestCount: 2,
+      findingCount: expect.any(Number),
+      warningCount: expect.any(Number),
+      findings: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "parameters",
+          title: "Agent parameters changed"
+        }),
+        expect.objectContaining({
+          kind: "context",
+          title: "Context grew between agent requests"
+        })
+      ])
+    });
+  });
+
   it("returns context diff for a request", async () => {
     const requests = store.listRequests("session-a");
     const response = await app.inject({ method: "GET", url: `/api/requests/${requests[0].id}/context-diff` });
@@ -782,6 +804,7 @@ describe("viewer", () => {
     expect(response.body).toContain("claude-watch-root");
     expect(response.body).toContain("Overview");
     expect(response.body).toContain("Insight");
+    expect(response.body).toContain("Findings");
     expect(response.body).toContain("Inventory");
     expect(response.body).toContain("Params");
     expect(response.body).toContain("Compare");
@@ -825,6 +848,8 @@ describe("viewer", () => {
     expect(response.body).toContain("refreshRequests");
     expect(response.body).toContain("sessionCompare");
     expect(response.body).toContain("renderSessionCompare");
+    expect(response.body).toContain("sessionFindings");
+    expect(response.body).toContain("renderSessionFindings");
     expect(response.body).toContain("sessionInventory");
     expect(response.body).toContain("renderSessionInventory");
     expect(response.body).toContain("sessionParameters");

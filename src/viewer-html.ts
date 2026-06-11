@@ -65,6 +65,7 @@ ${VIEWER_STYLES}
         <div class="tabs" role="tablist">
           <button class="tab active" data-tab="overview" type="button">Overview</button>
           <button class="tab" data-tab="insight" type="button">Insight</button>
+          <button class="tab" data-tab="findings" type="button">Findings</button>
           <button class="tab" data-tab="inventory" type="button">Inventory</button>
           <button class="tab" data-tab="params" type="button">Params</button>
           <button class="tab" data-tab="compare" type="button">Compare</button>

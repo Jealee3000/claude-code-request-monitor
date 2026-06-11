@@ -12,6 +12,7 @@ import { buildRequestSearch } from "./request-search.js";
 import { buildSystemPromptPreview } from "./system-prompt.js";
 import { buildSessionCompare } from "./session-compare.js";
 import { buildSessionExport } from "./session-export.js";
+import { buildSessionFindings } from "./session-findings.js";
 import { buildSessionInventory } from "./session-inventory.js";
 import { buildSessionParameters } from "./session-parameters.js";
 import { buildTokenBudget } from "./token-budget.js";
@@ -113,6 +114,15 @@ export function buildViewerServer(store: RequestStore, options: ViewerOptions = 
     }
 
     return buildSessionParameters(store.listRequestDetails(session.id));
+  });
+
+  app.get<{ Params: { id: string } }>("/api/sessions/:id/findings", async (request, reply) => {
+    const session = store.listSessions().find((item) => item.id === request.params.id);
+    if (!session) {
+      return reply.code(404).send({ error: "Session not found" });
+    }
+
+    return buildSessionFindings(store.listRequestDetails(session.id));
   });
 
   app.get<{ Params: { id: string }; Querystring: { baselineSessionId?: string } }>(

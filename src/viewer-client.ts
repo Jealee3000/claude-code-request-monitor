@@ -5,6 +5,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       sessions: [],
       sessionExport: null,
       sessionCompare: null,
+      sessionFindings: null,
       sessionInventory: null,
       sessionParameters: null,
       claudeSessions: [],
@@ -116,6 +117,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.selectedSession = id;
       state.sessionExport = null;
       state.sessionCompare = null;
+      state.sessionFindings = null;
       state.sessionInventory = null;
       state.sessionParameters = null;
       state.selectedRequest = null;
@@ -133,12 +135,14 @@ export function renderViewerClientScript(repoRoot: string): string {
       state.turnReplay = null;
       state.toolGraph = null;
       state.agentInsight = null;
-      const [sessionCompare, sessionInventory, sessionParameters] = await Promise.all([
+      const [sessionCompare, sessionFindings, sessionInventory, sessionParameters] = await Promise.all([
         fetchJson('/api/sessions/' + encodeURIComponent(id) + '/compare'),
+        fetchJson('/api/sessions/' + encodeURIComponent(id) + '/findings'),
         fetchJson('/api/sessions/' + encodeURIComponent(id) + '/inventory'),
         fetchJson('/api/sessions/' + encodeURIComponent(id) + '/parameters')
       ]);
       state.sessionCompare = sessionCompare;
+      state.sessionFindings = sessionFindings;
       state.sessionInventory = sessionInventory;
       state.sessionParameters = sessionParameters;
       await refreshRequests({ resetSelection: true });
@@ -158,6 +162,7 @@ export function renderViewerClientScript(repoRoot: string): string {
           state.requestSearchResults = null;
         }
         await loadTimeline();
+        state.sessionFindings = await fetchJson('/api/sessions/' + encodeURIComponent(state.selectedSession) + '/findings');
         state.sessionInventory = await fetchJson('/api/sessions/' + encodeURIComponent(state.selectedSession) + '/inventory');
         state.sessionParameters = await fetchJson('/api/sessions/' + encodeURIComponent(state.selectedSession) + '/parameters');
         if (options.resetSelection) {
@@ -335,6 +340,7 @@ export function renderViewerClientScript(repoRoot: string): string {
         state.selectedSession = null;
         state.sessionExport = null;
         state.sessionCompare = null;
+        state.sessionFindings = null;
         state.sessionInventory = null;
         state.sessionParameters = null;
         state.requests = [];
@@ -566,6 +572,7 @@ export function renderViewerClientScript(repoRoot: string): string {
       const htmlByTab = {
         overview: renderOverview,
         insight: renderAgentInsight,
+        findings: renderSessionFindings,
         inventory: renderSessionInventory,
         params: renderSessionParameters,
         compare: renderTurnCompare,
@@ -589,6 +596,7 @@ export function renderViewerClientScript(repoRoot: string): string {
     }
 
     function renderSessionLevelDetail() {
+      if (state.tab === 'findings') return renderSessionFindings();
       if (state.tab === 'inventory') return renderSessionInventory();
       if (state.tab === 'params') return renderSessionParameters();
       return renderSessionCompare();
@@ -659,6 +667,38 @@ export function renderViewerClientScript(repoRoot: string): string {
         '<div class="panel"><div class="panel-title">Skills removed</div>' + renderList(compare.skillDiff.removed) + '</div>' +
         '<div class="panel"><div class="panel-title">Only current prompts</div>' + renderList(compare.onlyCurrentPrompts) + '</div>' +
         '<div class="panel"><div class="panel-title">Only baseline prompts</div>' + renderList(compare.onlyBaselinePrompts) + '</div>';
+    }
+
+    function renderSessionFindings() {
+      const findings = state.sessionFindings;
+      if (!findings) {
+        return '<div class="empty">Select a session to inspect learning findings.</div>';
+      }
+      return '<div class="metric-grid">' +
+        metric('Requests', findings.requestCount) +
+        metric('Agent requests', findings.agentRequestCount) +
+        metric('Findings', findings.findingCount) +
+        metric('Warnings', findings.warningCount) +
+        '</div>' +
+        '<div class="panel"><div class="panel-title">Learning Findings</div>' + renderSessionFindingItems(findings.findings) + '</div>';
+    }
+
+    function renderSessionFindingItems(items) {
+      if (!items || !items.length) return '<span class="secondary">none</span>';
+      return items.map((item) => {
+        const severityClass = item.severity === 'error' ? 'bad' : item.severity === 'warning' ? 'warning' : '';
+        const badge = '<span class="flag">' + escapeHtml(item.kind) + '</span><span class="flag">' + escapeHtml(item.severity) + '</span>';
+        const content = '<div class="primary">' + escapeHtml(item.title) + ' ' + badge + '</div>' +
+          '<div class="secondary">' + escapeHtml(item.requestId ? 'request ' + item.requestId : 'session level') + '</div>' +
+          '<div class="secondary">' + escapeHtml(item.detail) + '</div>' +
+          '<div class="secondary">' + renderJsonTree(item.values || {}, 'values') + '</div>';
+        if (!item.requestId) {
+          return '<div class="row issue ' + escapeHtml(severityClass) + '">' + content + '</div>';
+        }
+        return '<button class="row issue ' + escapeHtml(severityClass) + '" type="button" onclick="selectRequest(' + item.requestId + ', \\'insight\\')">' +
+          content +
+          '</button>';
+      }).join('');
     }
 
     function renderSessionInventory() {
